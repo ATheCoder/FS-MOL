@@ -9,7 +9,7 @@ def convert_to_pyg_graph(graph):
     double_bonds = adjacency_lists[1]
     triple_bonds =  adjacency_lists[2]
 
-    edge_index = torch.cat(list(map(torch.tensor, adjacency_lists)), dim=0)
+    edge_index = torch.cat(list(map(torch.tensor, adjacency_lists)), dim=0).t().contiguous()
 
     edge_feats = [0 for bond in single_bonds] + [1 for bond in double_bonds] + [2 for bond in triple_bonds]
 
