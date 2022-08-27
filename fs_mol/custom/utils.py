@@ -1,7 +1,10 @@
 import torch
 from torch_geometric.data import Data
 
-def convert_to_pyg_graph(graph):
+def convert_to_pyg_graph(sample):
+    graph = sample.graph
+    y = 1 if sample.bool_label else 0
+
     x = torch.tensor(graph.node_features)
     adjacency_lists = graph.adjacency_lists
 
@@ -13,4 +16,4 @@ def convert_to_pyg_graph(graph):
 
     edge_feats = [0 for bond in single_bonds] + [1 for bond in double_bonds] + [2 for bond in triple_bonds]
 
-    return Data(x=x, edge_index=edge_index, edge_attr=edge_feats)
+    return Data(x=x, edge_index=edge_index, edge_attr=torch.tensor(edge_feats), y=torch.tensor(y))
