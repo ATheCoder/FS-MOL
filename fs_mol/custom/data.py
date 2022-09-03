@@ -5,10 +5,10 @@ from fs_mol.data.fsmol_task import FSMolTask
 from fs_mol.data.fsmol_task_sampler import StratifiedTaskSampler
 
 
-def generate_episodic_iterable(dataset, repeat = False):
+def generate_episodic_iterable(dataset, datafold, repeat = False):
     if dataset._num_workers > 0:
         raise Exception("Number of Workers should be `0` on the dataset when using the episodic iterable.")
-        
+
     task_sampler = StratifiedTaskSampler(
         train_size_or_ratio=64, test_size_or_ratio=256
     )
@@ -25,7 +25,7 @@ def generate_episodic_iterable(dataset, repeat = False):
 
     
     return dataset.get_task_reading_iterable(
-        data_fold=DataFold.TRAIN,
+        data_fold=datafold,
         task_reader_fn=simple_task_reader,
         repeat=repeat,
     )
