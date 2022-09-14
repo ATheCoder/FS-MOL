@@ -343,7 +343,7 @@ class PrototypicalNetworkTrainer(PrototypicalNetwork):
 
             task_batch_mean_loss = np.mean(task_batch_losses)
             task_batch_avg_metrics = avg_task_metrics_list(task_batch_metrics)
-            wandb.log({"task_batch_mean_loss": task_batch_mean_loss, "task_batch_avg_prec": task_batch_avg_metrics["task_batch_avg_precision"][0], "task_batch_avg_kappa": task_batch_avg_metrics["kappa"][0], "task_batch_avg_acc": task_batch_avg_metrics["acc"][0]})
+            wandb.log({"task_batch_mean_loss": task_batch_mean_loss, "task_batch_avg_precision": task_batch_avg_metrics["avg_precision"][0], "task_batch_avg_kappa": task_batch_avg_metrics["kappa"][0], "task_batch_avg_acc": task_batch_avg_metrics["acc"][0]})
             metric_logger.log_metrics(
                 loss=task_batch_mean_loss,
                 avg_prec=task_batch_avg_metrics["avg_precision"][0],
