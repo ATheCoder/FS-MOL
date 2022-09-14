@@ -4,6 +4,7 @@ import sys
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, Dict, List, Optional, Tuple
+import wandb
 
 import numpy as np
 import torch
@@ -292,6 +293,7 @@ class PrototypicalNetworkTrainer(PrototypicalNetwork):
 
     def train_loop(self, out_dir: str, dataset: FSMolDataset, device: torch.device, aml_run=None):
         self.save_model(os.path.join(out_dir, "best_validation.pt"))
+        wandb.watch(self)
 
         train_task_sample_iterator = iter(
             get_protonet_task_sample_iterable(
@@ -330,6 +332,7 @@ class PrototypicalNetworkTrainer(PrototypicalNetwork):
                 )
                 task_batch_losses.append(task_loss)
                 task_batch_metrics.append(task_metrics)
+                wandb.log({**task_metrics, "task_loss": task_loss})
 
             # Now do a training step - run_on_batches will have accumulated gradients
             if self.config.clip_value is not None:
@@ -340,6 +343,7 @@ class PrototypicalNetworkTrainer(PrototypicalNetwork):
 
             task_batch_mean_loss = np.mean(task_batch_losses)
             task_batch_avg_metrics = avg_task_metrics_list(task_batch_metrics)
+            wandb.log({"task_batch_mean_loss": task_batch_mean_loss, "task_batch_avg_prec": task_batch_avg_metrics["task_batch_avg_precision"][0], "task_batch_avg_kappa": task_batch_avg_metrics["kappa"][0], "task_batch_avg_acc": task_batch_avg_metrics["acc"][0]})
             metric_logger.log_metrics(
                 loss=task_batch_mean_loss,
                 avg_prec=task_batch_avg_metrics["avg_precision"][0],
@@ -349,6 +353,7 @@ class PrototypicalNetworkTrainer(PrototypicalNetwork):
 
             if step % self.config.validate_every_num_steps == 0:
                 valid_metric = validate_by_finetuning_on_tasks(self, dataset, aml_run=aml_run)
+                wandb.log({"valid_mean_avg_prec": valid_metric})
 
                 if aml_run:
                     # printing some measure of loss on all validation tasks.
