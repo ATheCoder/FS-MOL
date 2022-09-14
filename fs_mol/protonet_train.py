@@ -5,6 +5,7 @@ import json
 
 import torch
 from pyprojroot import here as project_root
+import wandb
 
 sys.path.insert(0, str(project_root()))
 
@@ -134,6 +135,7 @@ def make_trainer_config(args: argparse.Namespace) -> PrototypicalNetworkTrainerC
 def main():
     args = parse_command_line()
     config = make_trainer_config(args)
+    run = wandb.init(config=config)
 
     out_dir, dataset, aml_run = set_up_train_run(
         f"ProtoNet_{config.used_features}", args, torch=True
@@ -151,6 +153,7 @@ def main():
         model_trainer.load_model_gnn_weights(path=args.pretrained_gnn, device=device)
 
     model_trainer.train_loop(out_dir, dataset, device, aml_run)
+    run.finish()
 
 
 if __name__ == "__main__":
