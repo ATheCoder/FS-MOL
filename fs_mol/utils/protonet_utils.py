@@ -332,7 +332,7 @@ class PrototypicalNetworkTrainer(PrototypicalNetwork):
                 )
                 task_batch_losses.append(task_loss)
                 task_batch_metrics.append(task_metrics)
-                wandb.log({**task_metrics, "task_loss": task_loss})
+                wandb.log({**task_metrics.__dict__, "task_loss": task_loss})
 
             # Now do a training step - run_on_batches will have accumulated gradients
             if self.config.clip_value is not None:
