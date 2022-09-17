@@ -27,6 +27,9 @@
 # Do not enable mails when submitting large numbers (>20) of jobs at once
 #SBATCH --mail-type=END
 
+#SBATCH --mail-user=o.k.shirekar@student.tudelft.nl,arbabiarash0@gmail.com
+
+
 # 90 seconds before training ends, to help create a checkpoint and requeue the job
 #SBATCH --signal=SIGUSR1@90
 
