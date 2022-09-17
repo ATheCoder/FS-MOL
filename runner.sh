@@ -35,6 +35,6 @@ module use /opt/insy/modulefiles
 module load cuda/11.3
 module load miniconda/3.9
 
-source activate /home/nfs/oshirekar/unsupervised_ml/ai2
+source activate /home/nfs/oshirekar/unsupervised_ml/mol
 # send all remaining arguments
 srun python fs_mol/protonet_train.py ./datasets/fs-mol/
