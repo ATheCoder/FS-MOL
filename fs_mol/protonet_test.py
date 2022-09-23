@@ -97,7 +97,7 @@ def main():
         model_weights_file,
         device=device,
     )
-    
+
     wandb.watch(model)
 
     test(
@@ -110,6 +110,7 @@ def main():
         batch_size=args.batch_size,
     )
 
+    run.log_artifact()
     run.finish()
 
 
