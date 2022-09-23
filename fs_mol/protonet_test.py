@@ -5,6 +5,7 @@ from typing import List
 
 import torch
 from pyprojroot import here as project_root
+import wandb
 
 sys.path.insert(0, str(project_root()))
 
@@ -77,6 +78,7 @@ def test(
 
 def main():
     args = parse_command_line()
+    run = wandb.init(config=args)
     out_dir, dataset = set_up_test_run("ProtoNet", args, torch=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -90,10 +92,13 @@ def main():
         device=device,
     )
 
+
     model = PrototypicalNetworkTrainer.build_from_model_file(
         model_weights_file,
         device=device,
     )
+    
+    wandb.watch(model)
 
     test(
         model,
@@ -104,6 +109,8 @@ def main():
         seed=args.seed,
         batch_size=args.batch_size,
     )
+
+    run.finish()
 
 
 if __name__ == "__main__":

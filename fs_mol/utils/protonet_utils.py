@@ -122,6 +122,9 @@ def evaluate_protonet_model(
             batch_labels=pn_task_sample.batch_labels,
             train=False,
         )
+
+        wandb.log({**result_metrics.__dict__})
+
         logger.info(
             f"{pn_task_sample.task_name}:"
             f" {pn_task_sample.num_support_samples:3d} support samples,"
