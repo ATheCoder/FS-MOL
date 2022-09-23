@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 from dpu_utils.utils.richpath import RichPath
+import wandb
 
 from fs_mol.data.fsmol_dataset import DataFold, FSMolDataset
 from fs_mol.data.fsmol_task import FSMolTask, FSMolTaskSample
@@ -200,6 +201,8 @@ def eval_model(
     task_reading_kwargs = {"task_reader_fn": task_reader_fn} if task_reader_fn is not None else {}
     task_to_results: Dict[str, List[FSMolTaskSampleEvalResults]] = {}
 
+    validation_summary_artifcat = wandb.Artifact('protonet-validation-summary', type='valid-summary', description='Summary of Validation on trained ProtoNet on FS-MOL')
+
     for task in dataset.get_task_reading_iterable(fold, **task_reading_kwargs):
         test_results: List[FSMolTaskSampleEvalResults] = []
         for train_size in train_set_sample_sizes:
@@ -248,7 +251,9 @@ def eval_model(
         task_to_results[task.name] = test_results
 
         if out_dir is not None:
-            write_csv_summary(os.path.join(out_dir, f"{task.name}_eval_results.csv"), test_results)
+            save_path = os.path.join(out_dir, f"{task.name}_eval_results.csv")
+            write_csv_summary(save_path, test_results)
+            validation_summary_artifcat.add_file(save_path)
 
     logger.info(f"=== Completed evaluation on all tasks.")
 
