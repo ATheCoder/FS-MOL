@@ -201,8 +201,6 @@ def eval_model(
     task_reading_kwargs = {"task_reader_fn": task_reader_fn} if task_reader_fn is not None else {}
     task_to_results: Dict[str, List[FSMolTaskSampleEvalResults]] = {}
 
-    validation_summary_artifcat = wandb.Artifact('protonet-validation-summary', type='valid-summary', description='Summary of Validation on trained ProtoNet on FS-MOL')
-
     for task in dataset.get_task_reading_iterable(fold, **task_reading_kwargs):
         test_results: List[FSMolTaskSampleEvalResults] = []
         for train_size in train_set_sample_sizes:
@@ -253,7 +251,8 @@ def eval_model(
         if out_dir is not None:
             save_path = os.path.join(out_dir, f"{task.name}_eval_results.csv")
             write_csv_summary(save_path, test_results)
-            validation_summary_artifcat.add_file(save_path)
+
+        break
 
     logger.info(f"=== Completed evaluation on all tasks.")
 

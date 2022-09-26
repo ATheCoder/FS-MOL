@@ -83,6 +83,8 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
+    validation_summary_artifcat = wandb.Artifact('protonet-validation-summary', type='valid-summary', description='Summary of Validation on trained ProtoNet on FS-MOL')
+    validation_summary_artifcat.add_dir(out_dir)
 
     model_weights_file = resolve_starting_model_file(
         model_file=args.TRAINED_MODEL,
@@ -109,8 +111,9 @@ def main():
         seed=args.seed,
         batch_size=args.batch_size,
     )
-
-    run.log_artifact()
+    print('Hello: ')
+    print(out_dir)
+    run.log_artifact(validation_summary_artifcat)
     run.finish()
 
 
