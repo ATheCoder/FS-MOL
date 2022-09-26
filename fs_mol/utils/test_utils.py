@@ -252,7 +252,6 @@ def eval_model(
             save_path = os.path.join(out_dir, f"{task.name}_eval_results.csv")
             write_csv_summary(save_path, test_results)
 
-        break
 
     logger.info(f"=== Completed evaluation on all tasks.")
 
