@@ -123,6 +123,9 @@ def evaluate_protonet_model(
             train=False,
         )
 
+        num_support_samples = pn_task_sample.__dict__['num_support_samples']
+
+        wandb.log({f"{num_support_samples}-precision": result_metrics.prec, f"{num_support_samples}-recall": result_metrics.recall})
         wandb.log({**result_metrics.__dict__})
 
         logger.info(
