@@ -354,3 +354,7 @@ MigrationBackup/
 .ionide/
 
 /.idea/
+
+wandb
+outputs
+saved_weights
