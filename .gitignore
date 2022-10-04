@@ -358,3 +358,5 @@ MigrationBackup/
 wandb
 outputs
 saved_weights
+
+results
