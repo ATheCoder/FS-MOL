@@ -360,3 +360,5 @@ outputs
 saved_weights
 
 results
+
+*.pyi
