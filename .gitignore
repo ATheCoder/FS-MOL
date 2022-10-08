@@ -362,3 +362,6 @@ saved_weights
 results
 
 *.pyi
+.ipynb_checkpoints
+.vscode
+.DS_Store
