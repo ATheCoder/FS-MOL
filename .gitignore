@@ -367,3 +367,4 @@ results
 .DS_Store
 .env
 Notes.md
+datasets/*
