@@ -365,3 +365,5 @@ results
 .ipynb_checkpoints
 .vscode
 .DS_Store
+.env
+Notes.md
