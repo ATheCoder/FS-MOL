@@ -18,7 +18,7 @@ def get_dataset_url():
 class FSMolSelfSupervisedInMemory(InMemoryDataset):
     def __init__(self, root: str, transform=None, pre_transform=None, pre_filter=None):
         self.root = root
-        super().__init__(root, transform=None, pre_transform=None, pre_filter=None)
+        super().__init__(root, transform=transform, pre_transform=pre_transform, pre_filter=pre_filter)
         self.data, self.slices = torch.load(self.processed_paths[0])
     
     @property
