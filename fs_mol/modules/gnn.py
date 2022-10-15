@@ -5,6 +5,8 @@ from typing import List, Optional, Union
 import torch
 import torch.nn as nn
 from torch_scatter import scatter_sum, scatter_log_softmax, scatter_mean, scatter_max
+from torch_geometric.data import Data
+from torch_geometric.nn import MessagePassing
 
 from fs_mol.data.fsmol_dataset import NUM_EDGE_TYPES
 from fs_mol.modules.mlp import MLP
@@ -93,6 +95,46 @@ class BOOMLayer(nn.Module):
 
     def forward(self, x):
         return self.linear2(self.dropout(self.activation(self.linear1(x))))
+
+
+class PyG_RelationalMP(MessagePassing):
+    def __init__(self, hidden_dim: int, msg_dim: int, num_edge_types: int, message_function_depth: int = 1):
+        super().__init__(aggr=['SumAggregation', 'MeanAggregation', 'StdAggregation', 'MaxAggregation'])
+        
+        self.hidden_dim = hidden_dim
+        self.msg_dim = msg_dim
+        self.num_edge_types = num_edge_types
+        
+        self.message_fns = nn.ModuleList()
+        
+        for _ in range(num_edge_types):
+            self.message_fns.append(
+                MLP(
+                    input_dim=2 * hidden_dim,
+                    out_dim=msg_dim,
+                    hidden_layer_dims=[2 * hidden_dim] * (message_function_depth - 1)
+                )
+            )
+
+    def forward(self, graph: Data):
+        edge_index, x = graph.edge_index, graph.x
+        res = self.propagate(edge_index=edge_index, x=x, edge_attr=graph.edge_attr)
+        
+        return res
+    
+    def message(self, x_i, x_j, edge_attr):
+        res = torch.zeros(x_i.shape, dtype=x_i.dtype)
+        
+        for i in range(self.num_edge_types):
+            edge_type_indices = (edge_attr == i).nonzero()
+            edge_type_indices = edge_type_indices.squeeze(dim=-1)
+            if edge_type_indices.size(0) == 0:
+                continue
+            input = torch.cat([x_i[edge_type_indices], x_j[edge_type_indices]], dim=-1)
+            q = self.message_fns[i](input)
+            res[edge_type_indices] = q
+        
+        return res
 
 
 class RelationalMP(nn.Module):
