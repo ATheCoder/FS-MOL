@@ -40,16 +40,18 @@ class GeometricGNN(Module):
     def __init__(self, layer_count) -> None:
         super().__init__()
         
-        self.embedding_layer = Embedding(32, 64)
+        # Input dimension is 32
+        self.embedding_layer = Linear(32, 128, bias=False)
         
-        self.layers = torch.nn.ModuleList([GINConv(Linear(32, 32)) for _ in range(layer_count)])
+        self.layers = torch.nn.ModuleList([GINConv(Linear(128, 128)) for _ in range(layer_count)])
         
     def forward(self, graph: Data):
-        # TODO: Add embedding layer
         # TODO: Make the graph bidirectional
         
-        features = [graph.x]
-        last_conv = graph.x
+        x = self.embedding_layer(graph.x)
+        
+        features = [x]
+        last_conv = x
         
         for i in range(len(self.layers)):
             last_conv = self.layers[i](last_conv, edge_index=graph.edge_index)
