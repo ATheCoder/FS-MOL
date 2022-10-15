@@ -15,7 +15,7 @@ from torch_scatter import scatter
 # - 1. **GraphFeatureExtractor**.
 #     - 1. Linear Layer without bias (Embedding Layer?) [Done]
 #       2. Node Representations via a **GNN Module** (Multiple **GNNBlock**s)
-#       -   1. (Optional: Default True) make the edges bidirectional.
+#       -   1. (Optional: Default True) make the edges bidirectional. [Done]
 #           2. An array of node representations that are outputed via a number of **GNNBlock**s
 #           -   1. Float Tensor of shape (num_nodes, config.hidden_dim)
 #               2. mp_layers can be one of the following:
@@ -38,7 +38,7 @@ from torch_scatter import scatter
 #   3. Mahalanobis distance and prototypical network training ...
 
 class GeometricGNN(Module):
-    def __init__(self, layer_count) -> None:
+    def __init__(self, layer_count = 8) -> None:
         super().__init__()
         
         # Input dimension is 32
