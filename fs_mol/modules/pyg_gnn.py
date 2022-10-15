@@ -1,8 +1,9 @@
-from torch_geometric.nn import GINConv, MessagePassing
-from torch_geometric.data import Data
-from torch_scatter import scatter
-from torch.nn import Module, Linear, Embedding
 import torch
+from torch.nn import Embedding, Linear, Module
+from torch_geometric.data import Data
+from torch_geometric.nn import GINConv
+from torch_geometric.utils import add_self_loops
+from torch_scatter import scatter
 
 # TODO: Add BatchNormalization (Hint: model.py in GraphCL)
 # TODO: How do we aggregate the hidden representations of a graph?
@@ -12,9 +13,9 @@ import torch
 
 # How are graph representations calculated using FS-MOL's prototypical network?
 # - 1. **GraphFeatureExtractor**.
-#     - 1. Linear Layer without bias (Embedding Layer?)
+#     - 1. Linear Layer without bias (Embedding Layer?) [Done]
 #       2. Node Representations via a **GNN Module** (Multiple **GNNBlock**s)
-#       -   1. (Optional) make the edges bidirectional.
+#       -   1. (Optional: Default True) make the edges bidirectional.
 #           2. An array of node representations that are outputed via a number of **GNNBlock**s
 #           -   1. Float Tensor of shape (num_nodes, config.hidden_dim)
 #               2. mp_layers can be one of the following:
@@ -46,15 +47,15 @@ class GeometricGNN(Module):
         self.layers = torch.nn.ModuleList([GINConv(Linear(128, 128)) for _ in range(layer_count)])
         
     def forward(self, graph: Data):
-        # TODO: Make the graph bidirectional
-        
         x = self.embedding_layer(graph.x)
+        # Make the Graph Bidirectional
+        edge_index, _ = add_self_loops(graph.edge_index, num_nodes=x.size(0))
         
         features = [x]
         last_conv = x
         
         for i in range(len(self.layers)):
-            last_conv = self.layers[i](last_conv, edge_index=graph.edge_index)
+            last_conv = self.layers[i](last_conv, edge_index=edge_index)
             
             features.append(last_conv)
         
