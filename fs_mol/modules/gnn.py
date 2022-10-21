@@ -7,6 +7,7 @@ import torch.nn as nn
 from torch_scatter import scatter_sum, scatter_log_softmax, scatter_mean, scatter_max
 from torch_geometric.data import Data
 from torch_geometric.nn import MessagePassing
+from torch_geometric.utils import degree
 
 from fs_mol.data.fsmol_dataset import NUM_EDGE_TYPES
 from fs_mol.modules.mlp import MLP
@@ -98,7 +99,7 @@ class BOOMLayer(nn.Module):
 
 
 class PyG_RelationalMP(MessagePassing):
-    def __init__(self, hidden_dim: int, msg_dim: int, num_edge_types: int, message_function_depth: int = 1):
+    def __init__(self, hidden_dim: int, msg_dim: int, num_edge_types: int, message_function_depth: int = 1, use_pna_scalers: bool = False):
         super().__init__(aggr=['SumAggregation', 'MeanAggregation', 'StdAggregation', 'MaxAggregation'])
         
         self.hidden_dim = hidden_dim
@@ -115,20 +116,46 @@ class PyG_RelationalMP(MessagePassing):
                     hidden_layer_dims=[2 * hidden_dim] * (message_function_depth - 1)
                 )
             )
+        
+        self.use_pna_scalers = use_pna_scalers
 
     @property
     def message_size(self) -> int:
-        return self.msg_dim * 4
+        message_size = self.msg_dim * 4
+        if self.use_pna_scalers:
+            message_size = 3 * message_size  # Each scaled by identity, amplifier, attenuator
+        return message_size
     
     def forward(self, x, edge_index, edge_attr):
-        res = self.propagate(edge_index=edge_index, x=x, edge_attr=edge_attr)
+        new_node_repr = self.propagate(edge_index=edge_index, x=x, edge_attr=edge_attr)
+        
+        _, targets = edge_index
+        node_degrees = degree(targets, x.shape[0], dtype=x.dtype)
 
-        # TODO: implement use_pna_scalers
-        # TODO: Make sure the output of this function is the same as `RelationalMP`
-        return res
+        # TODO: Make sure the output of this function is the same as `RelationalMP`        
+        if self.use_pna_scalers:
+            # First, compute degrees of nodes:
+            delta = 1.1515  # Computed over LSC dataset
+
+            log_node_degrees = torch.log(node_degrees.float() + 1).unsqueeze(-1)
+
+            amplification_scale_factor = log_node_degrees / delta
+            attenuation_scale_factor = delta / (log_node_degrees + SMALL_NUMBER)
+
+            new_node_repr = torch.cat(
+                (
+                    new_node_repr,
+                    amplification_scale_factor * new_node_repr,
+                    attenuation_scale_factor * new_node_repr,
+                ),
+                dim=1,
+            )
+        
+
+        return new_node_repr
     
     def message(self, x_i, x_j, edge_attr):
-        res = torch.zeros(x_i.shape, dtype=x_i.dtype)
+        messages = torch.zeros(x_i.shape, dtype=x_i.dtype)
         
         for i in range(self.num_edge_types):
             edge_type_indices = (edge_attr == i).nonzero()
@@ -136,9 +163,10 @@ class PyG_RelationalMP(MessagePassing):
             if edge_type_indices.size(0) == 0:
                 continue
             input = torch.cat([x_i[edge_type_indices], x_j[edge_type_indices]], dim=-1)
-            res[edge_type_indices] = self.message_fns[i](input)
+            messages[edge_type_indices] = self.message_fns[i](input)
         
-        return res
+        
+        return messages
 
 
 class RelationalMP(nn.Module):
