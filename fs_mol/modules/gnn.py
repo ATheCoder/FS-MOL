@@ -112,7 +112,7 @@ class PyG_RelationalMP(MessagePassing):
             self.message_fns.append(
                 MLP(
                     input_dim=2 * hidden_dim,
-                    out_dim=msg_dim,
+                    out_dim=3 * msg_dim,
                     hidden_layer_dims=[2 * hidden_dim] * (message_function_depth - 1)
                 )
             )
@@ -529,8 +529,6 @@ class GNNBlock(nn.Module):
         self.msg_out_projection = nn.Linear(
             in_features=total_msg_dim, out_features=config.hidden_dim
         )
-
-        self.mp_norm_layer = nn.LayerNorm(normalized_shape=config.hidden_dim)
 
         if config.intermediate_dim > 0:
             self.boom_layer: Optional[BOOMLayer] = BOOMLayer(
