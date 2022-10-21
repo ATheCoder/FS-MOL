@@ -61,6 +61,7 @@ class PyG_GNNBlock(Module):
                             msg_dim=config.per_head_dim,
                             num_edge_types=config.num_edge_types,
                             message_function_depth=config.message_function_depth,
+                            use_pna_scalers=True
                             ) for _ in range(config.num_heads)])
         
         
@@ -139,14 +140,16 @@ class PyG_GraphFeatureExtractor(Module):
         
     def forward(self, graph: Data):
         x = self.embedding_layer(graph.x)
-        # Make the Graph Bidirectional
-        edge_index, _ = add_self_loops(graph.edge_index, num_nodes=x.size(0))
+        edge_index = graph.edge_index
+        # Make graph bidirectional:
+        edge_index = edge_index.tile((1,2))
+        edge_attr = graph.edge_attr.tile((2,))
         
         all_node_representations = [x]
         last_conv = x
         
         for i in range(len(self.layers)):
-            last_conv = self.layers[i](last_conv, edge_index=edge_index, edge_attr=graph.edge_attr)
+            last_conv = self.layers[i](last_conv, edge_index=edge_index, edge_attr=edge_attr)
             all_node_representations.append(last_conv)
 
         if self.config.readout_config.use_all_states:
