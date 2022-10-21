@@ -2,6 +2,8 @@ import sys
 
 from pyprojroot import here as project_root
 
+
+
 sys.path.insert(0, str(project_root()))
 import torch
 from torch.optim import Adam
@@ -10,7 +12,8 @@ from tqdm import tqdm
 
 from fs_mol.augmentation_transforms import SubGraphAugmentation
 from fs_mol.data.self_supervised_learning import FSMolSelfSupervisedInMemory
-from fs_mol.modules.pyg_gnn import GeometricGNN
+from fs_mol.modules.pyg_gnn import PyG_GraphFeatureExtractor
+from fs_mol.modules.graph_feature_extractor import GraphFeatureExtractorConfig
 
 dataset_subgraph = FSMolSelfSupervisedInMemory('./datasets/self-supervised', transform=SubGraphAugmentation(0.2))
 batch_size = 16
@@ -18,7 +21,7 @@ batch_size = 16
 dl = DataLoader(dataset_subgraph, batch_size=batch_size)
 dl2 = DataLoader(dataset_subgraph, batch_size=batch_size)
 
-model = GeometricGNN(8)
+model = PyG_GraphFeatureExtractor(GraphFeatureExtractorConfig())
 
 optm = Adam(model.parameters())
 
