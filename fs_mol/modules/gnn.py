@@ -116,10 +116,15 @@ class PyG_RelationalMP(MessagePassing):
                 )
             )
 
-    def forward(self, graph: Data):
-        edge_index, x = graph.edge_index, graph.x
-        res = self.propagate(edge_index=edge_index, x=x, edge_attr=graph.edge_attr)
-        
+    @property
+    def message_size(self) -> int:
+        return self.msg_dim * 4
+    
+    def forward(self, x, edge_index, edge_attr):
+        res = self.propagate(edge_index=edge_index, x=x, edge_attr=edge_attr)
+
+        # TODO: implement use_pna_scalers
+        # TODO: Make sure the output of this function is the same as `RelationalMP`
         return res
     
     def message(self, x_i, x_j, edge_attr):
@@ -131,8 +136,7 @@ class PyG_RelationalMP(MessagePassing):
             if edge_type_indices.size(0) == 0:
                 continue
             input = torch.cat([x_i[edge_type_indices], x_j[edge_type_indices]], dim=-1)
-            q = self.message_fns[i](input)
-            res[edge_type_indices] = q
+            res[edge_type_indices] = self.message_fns[i](input)
         
         return res
 
