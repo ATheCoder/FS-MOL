@@ -114,7 +114,7 @@ class PyG_GraphFeatureExtractor(Module):
         self.config = config
         
         # Input dimension is 32
-        self.embedding_layer = Linear(32, 128, bias=False)
+        self.embedding_layer = Linear(config.initial_node_feature_dim, config.gnn_config.hidden_dim, bias=False)
         self.layers = torch.nn.ModuleList([PyG_GNNBlock(GNNConfig()) for _ in range(config.gnn_config.num_layers)])
         
         if config.readout_config.use_all_states:
