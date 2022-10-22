@@ -1,12 +1,13 @@
 import argparse
 from dataclasses import dataclass
 from typing import List, Optional, Union
+from torch import Tensor
 
 import torch
 import torch.nn as nn
 from torch_scatter import scatter_sum, scatter_log_softmax, scatter_mean, scatter_max
 from torch_geometric.data import Data
-from torch_geometric.nn import MessagePassing
+from torch_geometric.nn import MessagePassing, PNAConv
 from torch_geometric.utils import degree
 
 from fs_mol.data.fsmol_dataset import NUM_EDGE_TYPES
@@ -98,13 +99,80 @@ class BOOMLayer(nn.Module):
         return self.linear2(self.dropout(self.activation(self.linear1(x))))
 
 
+def pna_aggregator(messages: torch.Tensor, targets: torch.Tensor, num_nodes: Union[torch.Tensor, int], partial_msg_dim, use_pna_scalers):
+    sum_aggregated_messages = scatter_sum(
+        src=messages[:, : partial_msg_dim],
+        index=targets,
+        dim=0,
+        dim_size=num_nodes,
+    )  # [V, partial_msg_dim]
+    mean_messages = messages[:, partial_msg_dim : 2 * partial_msg_dim]
+    mean_aggregated_messages = scatter_mean(
+        src=mean_messages,
+        index=targets,
+        dim=0,
+        dim_size=num_nodes,
+    )  # [V, partial_msg_dim]
+    per_node_message_stdev = (
+        nn.functional.relu(mean_messages.pow(2) - mean_aggregated_messages[targets].pow(2))
+        + SMALL_NUMBER
+    )
+    std_aggregated_messages = torch.sqrt(
+        scatter_sum(src=per_node_message_stdev, index=targets, dim=0, dim_size=num_nodes)
+    )  # [V, partial_msg_dim]
+    max_aggregated_messages = scatter_max(
+        src=messages[:, 2 * partial_msg_dim : 3 * partial_msg_dim],
+        index=targets,
+        dim=0,
+        dim_size=num_nodes,
+    )[
+        0
+    ]  # [V, partial_msg_dim]  # [0] needed to strip out the indices of the max.
+
+    messages = torch.cat(
+        (
+            sum_aggregated_messages,
+            mean_aggregated_messages,
+            std_aggregated_messages,
+            max_aggregated_messages,
+        ),
+        dim=1,
+    )
+    
+    if use_pna_scalers:
+            # First, compute degrees of nodes:
+            node_degrees = scatter_sum(
+                torch.ones_like(targets),
+                index=targets,
+                dim_size=num_nodes,
+            )
+            delta = 1.1515  # Computed over LSC dataset
+
+            log_node_degrees = torch.log(node_degrees.float() + 1).unsqueeze(-1)
+
+            amplification_scale_factor = log_node_degrees / delta
+            attenuation_scale_factor = delta / (log_node_degrees + SMALL_NUMBER)
+
+            messages = torch.cat(
+                (
+                    messages,
+                    amplification_scale_factor * messages,
+                    attenuation_scale_factor * messages,
+                ),
+                dim=1,
+            )
+
+    return messages
+
 class PyG_RelationalMP(MessagePassing):
     def __init__(self, hidden_dim: int, msg_dim: int, num_edge_types: int, message_function_depth: int = 1, use_pna_scalers: bool = False):
-        super().__init__(aggr=['SumAggregation', 'MeanAggregation', 'StdAggregation', 'MaxAggregation'])
+        super().__init__(aggr=None)
         
         self.hidden_dim = hidden_dim
         self.msg_dim = msg_dim
         self.num_edge_types = num_edge_types
+        
+        self.out_dim = 3 * msg_dim
         
         self.message_fns = nn.ModuleList()
         
@@ -121,41 +189,19 @@ class PyG_RelationalMP(MessagePassing):
 
     @property
     def message_size(self) -> int:
-        message_size = self.msg_dim * 4
+        message_size = self.msg_dim * 4 * 3
         if self.use_pna_scalers:
             message_size = 3 * message_size  # Each scaled by identity, amplifier, attenuator
         return message_size
     
+    def aggregate(self, inputs: Tensor, index: Tensor, num_nodes) -> Tensor:
+        return pna_aggregator(inputs, index, num_nodes, self.msg_dim, self.use_pna_scalers)
+    
     def forward(self, x, edge_index, edge_attr):
-        new_node_repr = self.propagate(edge_index=edge_index, x=x, edge_attr=edge_attr)
-        
-        _, targets = edge_index
-        node_degrees = degree(targets, x.shape[0], dtype=x.dtype)
-
-        # TODO: Make sure the output of this function is the same as `RelationalMP`        
-        if self.use_pna_scalers:
-            # First, compute degrees of nodes:
-            delta = 1.1515  # Computed over LSC dataset
-
-            log_node_degrees = torch.log(node_degrees.float() + 1).unsqueeze(-1)
-
-            amplification_scale_factor = log_node_degrees / delta
-            attenuation_scale_factor = delta / (log_node_degrees + SMALL_NUMBER)
-
-            new_node_repr = torch.cat(
-                (
-                    new_node_repr,
-                    amplification_scale_factor * new_node_repr,
-                    attenuation_scale_factor * new_node_repr,
-                ),
-                dim=1,
-            )
-        
-
-        return new_node_repr
+        return self.propagate(edge_index=edge_index, x=x, edge_attr=edge_attr, num_nodes=x.shape[0])
     
     def message(self, x_i, x_j, edge_attr):
-        messages = torch.zeros(x_i.shape, dtype=x_i.dtype)
+        messages = torch.zeros((x_i.shape[0], self.out_dim), dtype=x_i.dtype)
         
         for i in range(self.num_edge_types):
             edge_type_indices = (edge_attr == i).nonzero()
@@ -164,7 +210,6 @@ class PyG_RelationalMP(MessagePassing):
                 continue
             input = torch.cat([x_i[edge_type_indices], x_j[edge_type_indices]], dim=-1)
             messages[edge_type_indices] = self.message_fns[i](input)
-        
         
         return messages
 
@@ -211,13 +256,13 @@ class RelationalMP(nn.Module):
         for edge_type, adj_list in enumerate(adj_lists):
             srcs = adj_list[:, 0]
             tgts = adj_list[:, 1]
-
+            
             messages = self.message_fns[edge_type](torch.cat((x[srcs], x[tgts]), dim=1))
             messages = nn.functional.relu(messages)
 
             all_msg_list.append(messages)
             all_tgts_list.append(tgts)
-
+        
         all_messages = torch.cat(all_msg_list, dim=0)  # [E, msg_dim]
         all_targets = torch.cat(all_tgts_list, dim=0)  # [E]
 
@@ -274,69 +319,7 @@ class RelationalMultiAggrMP(RelationalMP):
         targets: torch.Tensor,
         num_nodes: Union[torch.Tensor, int],
     ):
-        sum_aggregated_messages = scatter_sum(
-            src=messages[:, : self.partial_msg_dim],
-            index=targets,
-            dim=0,
-            dim_size=num_nodes,
-        )  # [V, partial_msg_dim]
-        mean_messages = messages[:, self.partial_msg_dim : 2 * self.partial_msg_dim]
-        mean_aggregated_messages = scatter_mean(
-            src=mean_messages,
-            index=targets,
-            dim=0,
-            dim_size=num_nodes,
-        )  # [V, partial_msg_dim]
-        per_node_message_stdev = (
-            nn.functional.relu(mean_messages.pow(2) - mean_aggregated_messages[targets].pow(2))
-            + SMALL_NUMBER
-        )
-        std_aggregated_messages = torch.sqrt(
-            scatter_sum(src=per_node_message_stdev, index=targets, dim=0, dim_size=num_nodes)
-        )  # [V, partial_msg_dim]
-        max_aggregated_messages = scatter_max(
-            src=messages[:, 2 * self.partial_msg_dim : 3 * self.partial_msg_dim],
-            index=targets,
-            dim=0,
-            dim_size=num_nodes,
-        )[
-            0
-        ]  # [V, partial_msg_dim]  # [0] needed to strip out the indices of the max.
-
-        messages = torch.cat(
-            (
-                sum_aggregated_messages,
-                mean_aggregated_messages,
-                std_aggregated_messages,
-                max_aggregated_messages,
-            ),
-            dim=1,
-        )
-
-        if self.use_pna_scalers:
-            # First, compute degrees of nodes:
-            node_degrees = scatter_sum(
-                torch.ones_like(targets),
-                index=targets,
-                dim_size=num_nodes,
-            )
-            delta = 1.1515  # Computed over LSC dataset
-
-            log_node_degrees = torch.log(node_degrees.float() + 1).unsqueeze(-1)
-
-            amplification_scale_factor = log_node_degrees / delta
-            attenuation_scale_factor = delta / (log_node_degrees + SMALL_NUMBER)
-
-            messages = torch.cat(
-                (
-                    messages,
-                    amplification_scale_factor * messages,
-                    attenuation_scale_factor * messages,
-                ),
-                dim=1,
-            )
-
-        return messages
+        return pna_aggregator(messages, targets, num_nodes, self.partial_msg_dim, self.use_pna_scalers)
 
 
 class RelationalMultiHeadAttentionMP(nn.Module):
