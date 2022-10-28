@@ -58,6 +58,18 @@ BatchFeatureType = TypeVar("BatchFeatureType")
 BatchLabelType = TypeVar("BatchLabelType")
 
 
+@dataclass(frozen=True)
+class Feature_Extractor_FSMolBatch:
+    num_graphs: int
+    num_nodes: int
+    num_edges: int
+    node_features: np.ndarray  # [V, atom_features] float
+    adjacency_lists: List[
+        np.ndarray
+    ]  # list, len num_edge_types, elements [num edges, 2] int tensors
+    node_to_graph: np.ndarray  # [V] long
+
+
 def fsmol_batch_finalizer(batch_data: Dict[str, Any]) -> FSMolBatch:
     """
     Default implementation of a batch finalizer. Converts a batch that has reached maximum size
