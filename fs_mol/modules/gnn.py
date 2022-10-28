@@ -189,7 +189,7 @@ class PyG_RelationalMP(MessagePassing):
 
     @property
     def message_size(self) -> int:
-        message_size = self.msg_dim * 4 * 3
+        message_size = self.msg_dim * 4 
         if self.use_pna_scalers:
             message_size = 3 * message_size  # Each scaled by identity, amplifier, attenuator
         return message_size
