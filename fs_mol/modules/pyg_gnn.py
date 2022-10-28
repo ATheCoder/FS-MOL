@@ -160,8 +160,6 @@ class PyG_GraphFeatureExtractor(Module):
         else:
             readout_node_reprs = all_node_representations[-1]
         
-        print('PYG Implementation:')
-        print(readout_node_reprs)
         
         mol_representations = self.readout(
             node_embeddings=readout_node_reprs,
