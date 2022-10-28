@@ -1,12 +1,53 @@
 import torch
+from torch_geometric.loader import DataLoader
+from fs_mol.augmentation_transforms import SubGraphAugmentation
+from fs_mol.data.fsmol_batcher import FSMolBatch, Feature_Extractor_FSMolBatch
+from fs_mol.data.self_supervised_learning import FSMolSelfSupervisedInMemory
 from fs_mol.modules.gnn import GNNBlock, GNNConfig, PyG_RelationalMP, RelationalMultiAggrMP
 from fs_mol.modules.graph_feature_extractor import GraphFeatureExtractor, GraphFeatureExtractorConfig
 from fs_mol.modules.pyg_gnn import PyG_GNNBlock, PyG_GraphFeatureExtractor
 from torch_geometric.data import Data
 
+# Generate a batch of Graphs
+
+dataset_subgraph = FSMolSelfSupervisedInMemory('./datasets/self-supervised')
+batch_size = 16
+
+dl = DataLoader(dataset_subgraph, batch_size=batch_size)
+example_batch = next(iter(dl))
+
+# Convert that batch of Graphs into a representation that Feature Extractor can use
+
+def convert_batch_to_legacy(batch: Data):
+    num_graphs = batch.y.shape[0]
+    
+    node_features = batch.x
+    
+    t_edge_index = batch.edge_index.t()
+    
+    adjacency_lists = [[], [], []]
+    
+    for i, edge in enumerate(t_edge_index):
+        edge_type = batch.edge_attr[i]
+        
+        adjacency_lists[int(edge_type)].append(edge)    
+    
+    for i in range(3):
+        if len(adjacency_lists[i]) < 1:
+            adjacency_lists[i] = torch.empty((0, 2), dtype=torch.int64)
+            continue
+        adjacency_lists[i] = torch.vstack(adjacency_lists[i])
+        
+    
+    node_to_graph = batch.batch
+    
+    return Feature_Extractor_FSMolBatch(num_graphs=num_graphs, num_nodes=node_features.shape[0], num_edges=t_edge_index.shape[0], node_features=node_features, adjacency_lists=adjacency_lists, node_to_graph=node_to_graph)
+        
+c = convert_batch_to_legacy(example_batch)
+
 
 def generate_example_molecule_graph():
-    x = torch.rand((10, 32))
+    x = torch.rand((10, 32), dtype=torch.float64)
     
     adj_lists = [torch.tensor([[0, 1], [1, 0]]), torch.tensor([[2, 3], [3, 2]]), torch.tensor([[5, 4], [4, 5]])]
     
@@ -24,22 +65,30 @@ gnn_config = GNNConfig()
 def getParameterCount(model):
     return sum([x.numel() for x in model.parameters()])
 
+x, adj_lists, pyg_data = generate_example_molecule_graph()
 
-def compare_models(model1, model2):    
-    x, adj_lists, pyg_data = generate_example_molecule_graph()
-    
+def compare_models(model1, model2, data1, data2):
+    torch.manual_seed(0)
+    torch.use_deterministic_algorithms(True)
     for p in model1.parameters():
-        p.data.fill_(0.5)
+        p.data.fill_(0.05)
     
     for p in model2.parameters():
-        p.data.fill_(0.5)
+        p.data.fill_(0.05)
     
-    output_model1 = model1(x=pyg_data.x, edge_index=pyg_data.edge_index, edge_attr=pyg_data.edge_attr)
     
-    output_model2 = model2(x, adj_lists)
+    output_model1 = model1(data1)
     
+    output_model2 = model2(data2)
     # Should have the same number of Parameters:
     assert getParameterCount(model1) == getParameterCount(model2)
+    # print(output_model1[0])
+    # print('------')
+    # print(output_model2[0])
+    
+    for i in range(output_model1.shape[0]):
+        if not torch.allclose(output_model1[i], output_model2[i]):
+            print(f'Dimension {i} is not equal!')
     
     # Outputs should be the same:
     assert torch.allclose(output_model2, output_model1)
@@ -53,4 +102,14 @@ relational_mp_config = {
     "use_pna_scalers":True
 }
 
-compare_models(PyG_RelationalMP(**relational_mp_config), RelationalMultiAggrMP(**relational_mp_config))
+# compare_models(PyG_RelationalMP(**relational_mp_config), RelationalMultiAggrMP(**relational_mp_config), (x, adj_lists), pyg_data)
+
+
+compare_models(GraphFeatureExtractor(GraphFeatureExtractorConfig()), PyG_GraphFeatureExtractor(GraphFeatureExtractorConfig()), c, example_batch)
+
+legacy_gfe = GraphFeatureExtractor(GraphFeatureExtractorConfig())
+
+output = legacy_gfe(c)
+
+print(output)
+# compare_models(GraphFeatureExtractor(GraphFeatureExtractorConfig()), PyG_GraphFeatureExtractor(GraphFeatureExtractorConfig()))
