@@ -95,7 +95,9 @@ class PyG_GNNBlock(Module):
         new_representations = self.dropout_layer(new_representations)
         
         if self.config.use_rezero_scaling:
-            new_representations = self.alpha + new_representations
+            new_representations = self.alpha * new_representations
+        
+        node_representations = node_representations + new_representations
         
         if self.boom_layer is not None and self.boom_norm_layer is not None:
             boomed_representations = self.dropout_layer(
@@ -156,6 +158,9 @@ class PyG_GraphFeatureExtractor(Module):
             readout_node_reprs = torch.cat(all_node_representations, dim=-1)
         else:
             readout_node_reprs = all_node_representations[-1]
+        
+        print('PYG Implementation:')
+        print(readout_node_reprs)
         
         mol_representations = self.readout(
             node_embeddings=readout_node_reprs,
