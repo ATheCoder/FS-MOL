@@ -14,7 +14,7 @@ dataset_subgraph = FSMolSelfSupervisedInMemory('./datasets/self-supervised')
 batch_size = 16
 
 dl = DataLoader(dataset_subgraph, batch_size=batch_size)
-example_batch = next(next(iter(dl)))
+example_batch = next(iter(dl))
 
 # Convert that batch of Graphs into a representation that Feature Extractor can use
 
