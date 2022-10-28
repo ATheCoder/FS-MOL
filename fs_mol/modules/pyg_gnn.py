@@ -144,7 +144,8 @@ class PyG_GraphFeatureExtractor(Module):
         x = self.embedding_layer(graph.x)
         edge_index = graph.edge_index
         # Make graph bidirectional:
-        edge_index = edge_index.tile((1,2))
+        flipped_edge_index = torch.flip(graph.edge_index, dims=(0,))
+        edge_index = torch.cat([graph.edge_index, flipped_edge_index], dim=1)
         edge_attr = graph.edge_attr.tile((2,))
         
         all_node_representations = [x]
