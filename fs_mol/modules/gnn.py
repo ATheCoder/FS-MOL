@@ -201,7 +201,7 @@ class PyG_RelationalMP(MessagePassing):
         return self.propagate(edge_index=edge_index, x=x, edge_attr=edge_attr, num_nodes=x.shape[0])
     
     def message(self, x_i, x_j, edge_attr):
-        device = next(self.message_fns[i].parameters()).device
+        device = next(self.message_fns[0].parameters()).device
         messages = torch.zeros((x_i.shape[0], self.out_dim), dtype=x_i.dtype, device=device)
         
         for i in range(self.num_edge_types):
