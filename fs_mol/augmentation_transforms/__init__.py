@@ -3,7 +3,6 @@ from torch_geometric.data import Data
 import numpy as np
 import torch
 
-# What is Sub Graph Augmentation?
 class SubGraphAugmentation(torch.nn.Module):
     def __init__(self, aug_ratio):
         super().__init__()
@@ -31,7 +30,7 @@ class SubGraphAugmentation(torch.nn.Module):
             if sample_node in idx_sub:
                 continue
             idx_sub.append(sample_node)
-            idx_neigh.union(set([n for n in edge_index[1][edge_index[0]==idx_sub[-1]]]))
+            idx_neigh = idx_neigh.union(set([n for n in edge_index[1][edge_index[0]==idx_sub[-1]]]))
 
         idx_drop = [n for n in range(node_num) if not n in idx_sub]
         idx_nondrop = idx_sub
