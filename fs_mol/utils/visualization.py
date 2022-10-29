@@ -66,7 +66,7 @@ def convert_graph_to_mol(graph: Data):
     for edge_i, edge in enumerate(edges):
         bond_type = edge_to_bond_type[edge_i]
         
-        mol.AddBond(edge[0].item(), edge[1].item(), rdkit_bond_types[bond_type.item()])
+        mol.AddBond(edge[0].item(), edge[1].item(), rdkit_bond_types[int(bond_type.item())])
         
     Chem.SanitizeMol(mol)
     
