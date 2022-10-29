@@ -7,7 +7,7 @@ class SubGraphAugmentation(torch.nn.Module):
     def __init__(self, aug_ratio, device=None):
         super().__init__()
 
-        self.device = 'cuda' if device == 'cuda' else 'cpu'
+        self.device = device
         self.aug_ratio = aug_ratio
     
     def forward(self, data: Data):
