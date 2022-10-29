@@ -14,7 +14,7 @@ class SubGraphAugmentation(torch.nn.Module):
         _, edge_num = data.edge_index.size()
         sub_num = int(node_num * self.aug_ratio)
 
-        edge_index = data.edge_index.numpy()
+        edge_index = data.edge_index.cpu().numpy()
 
         idx_sub = [np.random.randint(node_num, size=1)[0]] # [3]
         idx_neigh = set([n for n in edge_index[1][edge_index[0]==idx_sub[0]]]) # Neighbors of the choosen Node
@@ -37,7 +37,7 @@ class SubGraphAugmentation(torch.nn.Module):
         idx_dict = {idx_nondrop[n]:n for n in list(range(len(idx_nondrop)))}
         edge_mask = np.array([n for n in range(edge_num) if (edge_index[0, n] in idx_nondrop and edge_index[1, n] in idx_nondrop)])
 
-        edge_index = data.edge_index.numpy()
+        edge_index = data.edge_index.cpu().numpy()
         edge_index = [[idx_dict[edge_index[0, n]], idx_dict[edge_index[1, n]]] for n in range(edge_num) if (not edge_index[0, n] in idx_drop) and (not edge_index[1, n] in idx_drop)]
         try:
             data.edge_index = torch.tensor(edge_index).transpose_(0, 1)
