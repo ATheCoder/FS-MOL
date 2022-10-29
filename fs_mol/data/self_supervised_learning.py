@@ -16,10 +16,11 @@ def get_dataset_url():
     return dataset_client.generate_pre_signed_s3_url(dataset_version_id=dataset_version_id, method='getObject', params={'Key': 'data.pt'}).url
 
 class FSMolSelfSupervisedInMemory(InMemoryDataset):
-    def __init__(self, root: str, transform=None, pre_transform=None, pre_filter=None):
+    def __init__(self, root: str, transform=None, pre_transform=None, pre_filter=None, device=None):
         self.root = root
         super().__init__(root, transform=transform, pre_transform=pre_transform, pre_filter=pre_filter)
-        self.data, self.slices = torch.load(self.processed_paths[0])
+        self.device = 'cuda' if device == 'cuda' else 'cpu'
+        self.data, self.slices = torch.load(self.processed_paths[0], map_location=self.device)
     
     @property
     def raw_paths(self):
