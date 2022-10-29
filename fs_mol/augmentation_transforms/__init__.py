@@ -4,9 +4,10 @@ import numpy as np
 import torch
 
 class SubGraphAugmentation(torch.nn.Module):
-    def __init__(self, aug_ratio):
+    def __init__(self, aug_ratio, device=None):
         super().__init__()
 
+        self.device = 'cuda' if device == 'cuda' else 'cpu'
         self.aug_ratio = aug_ratio
     
     def forward(self, data: Data):
@@ -40,9 +41,9 @@ class SubGraphAugmentation(torch.nn.Module):
         edge_index = data.edge_index.cpu().numpy()
         edge_index = [[idx_dict[edge_index[0, n]], idx_dict[edge_index[1, n]]] for n in range(edge_num) if (not edge_index[0, n] in idx_drop) and (not edge_index[1, n] in idx_drop)]
         try:
-            data.edge_index = torch.tensor(edge_index).transpose_(0, 1)
-            data.x = data.x[idx_nondrop]
-            data.edge_attr = data.edge_attr[edge_mask]
+            data.edge_index = torch.tensor(edge_index).transpose_(0, 1).to(self.device)
+            data.x = data.x[idx_nondrop].to(self.device)
+            data.edge_attr = data.edge_attr[edge_mask].to(self.device)
         except:
             data = data
 

@@ -16,8 +16,8 @@ from fs_mol.modules.graph_feature_extractor import GraphFeatureExtractorConfig
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-dataset_subgraph = FSMolSelfSupervisedInMemory('./datasets/self-supervised', transform=SubGraphAugmentation(0.2), device=device)
-dataset_subgraph_2 = FSMolSelfSupervisedInMemory('./datasets/self-supervised', transform=SubGraphAugmentation(0.2), device=device)
+dataset_subgraph = FSMolSelfSupervisedInMemory('./datasets/self-supervised', transform=SubGraphAugmentation(0.2, device=device), device=device)
+dataset_subgraph_2 = FSMolSelfSupervisedInMemory('./datasets/self-supervised', transform=SubGraphAugmentation(0.2, device=device), device=device)
 
 number_of_epochs = 1000
 batch_size = 32
