@@ -2,8 +2,6 @@ import sys
 
 from pyprojroot import here as project_root
 
-
-
 sys.path.insert(0, str(project_root()))
 import torch
 from torch.optim import Adam
@@ -15,13 +13,20 @@ from fs_mol.data.self_supervised_learning import FSMolSelfSupervisedInMemory
 from fs_mol.modules.pyg_gnn import PyG_GraphFeatureExtractor
 from fs_mol.modules.graph_feature_extractor import GraphFeatureExtractorConfig
 
-dataset_subgraph = FSMolSelfSupervisedInMemory('./datasets/self-supervised', transform=SubGraphAugmentation(0.2))
-batch_size = 16
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+dataset_subgraph = FSMolSelfSupervisedInMemory('./datasets/self-supervised', transform=SubGraphAugmentation(0.2), device=device)
+
+number_of_epochs = 1000
+batch_size = 32
 
 dl = DataLoader(dataset_subgraph, batch_size=batch_size)
 dl2 = DataLoader(dataset_subgraph, batch_size=batch_size)
 
 model = PyG_GraphFeatureExtractor(GraphFeatureExtractorConfig())
+
+model.to(device)
 
 optm = Adam(model.parameters())
 
@@ -37,10 +42,12 @@ def calculate_contrastive_loss(x1, x2):
     loss = - torch.log(loss).mean()
     return loss
 
-for batch_1, batch_2 in tqdm(zip(dl, dl2), total=len(dl)):
-    optm.zero_grad()
-    features_1 = model(batch_1)
-    features_2 = model(batch_2)
-    loss = calculate_contrastive_loss(features_1, features_2)
-    loss.backward()
-    optm.step()
+for epoch in range(number_of_epochs):
+    
+    for batch_1, batch_2 in tqdm(zip(dl, dl2), total=len(dl)):
+        optm.zero_grad()
+        features_1 = model(batch_1)
+        features_2 = model(batch_2)
+        loss = calculate_contrastive_loss(features_1, features_2)
+        loss.backward()
+        optm.step()
