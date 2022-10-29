@@ -14,7 +14,7 @@ from fs_mol.modules.pyg_gnn import PyG_GraphFeatureExtractor
 from fs_mol.modules.graph_feature_extractor import GraphFeatureExtractorConfig
 
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 dataset_subgraph = FSMolSelfSupervisedInMemory('./datasets/self-supervised', transform=SubGraphAugmentation(0.2, device=device), device=device)
 dataset_subgraph_2 = FSMolSelfSupervisedInMemory('./datasets/self-supervised', transform=SubGraphAugmentation(0.2, device=device), device=device)
@@ -25,9 +25,7 @@ batch_size = 32
 dl = DataLoader(dataset_subgraph, batch_size=batch_size)
 dl2 = DataLoader(dataset_subgraph_2, batch_size=batch_size)
 
-model = PyG_GraphFeatureExtractor(GraphFeatureExtractorConfig())
-
-model.to(device)
+model = PyG_GraphFeatureExtractor(GraphFeatureExtractorConfig()).to(device)
 
 optm = Adam(model.parameters())
 

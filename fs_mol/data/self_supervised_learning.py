@@ -19,7 +19,7 @@ class FSMolSelfSupervisedInMemory(InMemoryDataset):
     def __init__(self, root: str, transform=None, pre_transform=None, pre_filter=None, device=None):
         self.root = root
         super().__init__(root, transform=transform, pre_transform=pre_transform, pre_filter=pre_filter)
-        self.device = 'cuda' if device == 'cuda' else 'cpu'
+        self.device = device
         self.data, self.slices = torch.load(self.processed_paths[0], map_location=self.device)
     
     @property
