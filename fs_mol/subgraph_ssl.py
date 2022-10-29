@@ -17,12 +17,13 @@ from fs_mol.modules.graph_feature_extractor import GraphFeatureExtractorConfig
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 dataset_subgraph = FSMolSelfSupervisedInMemory('./datasets/self-supervised', transform=SubGraphAugmentation(0.2), device=device)
+dataset_subgraph_2 = FSMolSelfSupervisedInMemory('./datasets/self-supervised', transform=SubGraphAugmentation(0.2), device=device)
 
 number_of_epochs = 1000
 batch_size = 32
 
 dl = DataLoader(dataset_subgraph, batch_size=batch_size)
-dl2 = DataLoader(dataset_subgraph, batch_size=batch_size)
+dl2 = DataLoader(dataset_subgraph_2, batch_size=batch_size)
 
 model = PyG_GraphFeatureExtractor(GraphFeatureExtractorConfig())
 
