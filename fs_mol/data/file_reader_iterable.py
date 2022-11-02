@@ -309,3 +309,6 @@ class SequentialFileReaderIterable(Iterable[ReaderOutputType]):
                     np.random.shuffle(input_paths)
                 else:
                     break
+    
+    def __len__(self):
+        return len(self._data_paths) // self._reader_chunk_size
