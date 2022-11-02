@@ -5,6 +5,7 @@ import logging
 
 import numpy as np
 from dpu_utils.utils.richpath import RichPath
+from torch_geometric.data import Data
 
 from fs_mol.data import (
     DataFold,
@@ -27,6 +28,14 @@ class MoleculeProtoNetFeatures(FSMolBatch):
     fingerprints: np.ndarray  # [num_samples, FP_DIM]
     descriptors: np.ndarray  # [num_samples, DESC_DIM]
 
+@dataclass(frozen=True)
+class PyG_ProtonetBatch:
+    support_graphs: Data
+    query_graphs: Data
+    
+    @property
+    def num_query_samples(self) -> int:
+        return self.query_graphs.y.size()[0]
 
 @dataclass(frozen=True)
 class ProtoNetBatch:
@@ -88,12 +97,13 @@ def task_sample_to_pn_task_sample(
     # batch is the sum of support and query batches. To this end, we reset the
     # batch size now, and will restore that in the finally block:
     try:
-        orig_max_num_graphs = batcher._max_num_graphs
-        max_num_query_graphs = orig_max_num_graphs - support_features.num_graphs
+        orig_max_num_graphs = batcher._max_num_graphs # This is 32
+        max_num_query_graphs = orig_max_num_graphs - support_features.num_graphs # `support_features.num_graphs` is less than 32
+        # `max_num_query_graphs` is less than 32
         batcher._max_num_graphs = max_num_query_graphs
         sample_batches = []
         batch_labels: List[np.ndarray] = []
-        for query_features, query_labels in batcher.batch(task_sample.test_samples):
+        for query_features, query_labels in batcher.batch(task_sample.test_samples): # Generate a new batch that has `32 - num_support_graphs` of Graphs in it
             sample_batches.append(
                 ProtoNetBatch(
                     support_features=support_features,
@@ -105,6 +115,7 @@ def task_sample_to_pn_task_sample(
     finally:
         batcher._max_num_graphs = orig_max_num_graphs
 
+    # So in the end we have batches of 32 - SupportSetSize query set graphs
     return FeaturisedPNTaskSample(
         task_name=task_sample.name,
         num_support_samples=len(task_sample.train_samples),
