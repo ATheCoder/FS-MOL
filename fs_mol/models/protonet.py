@@ -10,7 +10,7 @@ from fs_mol.modules.graph_feature_extractor import (
     GraphFeatureExtractorConfig,
 )
 from fs_mol.data.protonet import ProtoNetBatch, PyG_ProtonetBatch
-from fs_mol.utils.protonet_utils import PrototypicalNetworkTrainer
+from fs_mol.modules.pyg_gnn import PyG_GraphFeatureExtractor
 
 
 FINGERPRINT_DIM = 2048
@@ -90,9 +90,9 @@ def _compute_class_means_and_precisions(
 
         return means, precisions
     
-def calculate_mahalanobis_logits(support_features_flat, support_labels, query_features_flat):
+def calculate_mahalanobis_logits(support_features_flat, support_labels, query_features_flat, device=None):
     class_means, class_precision_matrices = _compute_class_means_and_precisions(
-        support_features_flat, support_labels
+        support_features_flat, support_labels, device
     )
 
     # grabbing the number of classes and query examples for easier use later
@@ -127,16 +127,24 @@ class PrototypicalNetworkConfig:
     distance_metric: Literal["mahalanobis", "euclidean"] = "mahalanobis"
     
 class PyG_PrototypicalNetwork(nn.Module):
-    def __init__(self, graphFeatureExtractor: PrototypicalNetworkTrainer):
+    def __init__(self, graphFeatureExtractor: PyG_GraphFeatureExtractor):
+        super().__init__()
+        
         self.graph_feature_extractor = graphFeatureExtractor
+        
+        self.device = graphFeatureExtractor.device
+        
+    @staticmethod
+    def compute_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        return nn.functional.cross_entropy(logits, labels.long())
     
     def forward(self, input_batch: PyG_ProtonetBatch):
         support_features = self.graph_feature_extractor(input_batch.support_graphs)
         query_features = self.graph_feature_extractor(input_batch.query_graphs)
         
-        support_labels = list(map(lambda x: x.y, input_batch.support_graphs))
+        support_labels = input_batch.support_graphs.y
         
-        return calculate_mahalanobis_logits(support_features, support_labels, query_features)
+        return calculate_mahalanobis_logits(support_features, support_labels, query_features, device=self.device)
         
 
 class PrototypicalNetwork(nn.Module):
