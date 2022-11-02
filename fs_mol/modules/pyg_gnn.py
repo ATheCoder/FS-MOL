@@ -115,6 +115,8 @@ class PyG_GraphFeatureExtractor(Module):
         
         self.config = config
         
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        
         # Input dimension is 32
         self.embedding_layer = Linear(config.initial_node_feature_dim, config.gnn_config.hidden_dim, bias=False)
         self.layers = torch.nn.ModuleList([PyG_GNNBlock(GNNConfig()) for _ in range(config.gnn_config.num_layers)])
