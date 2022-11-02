@@ -6,7 +6,7 @@ from more_itertools import partition
 from dpu_utils.utils import RichPath
 from rdkit import Chem, DataStructs
 from rdkit.Chem import rdFingerprintGenerator, Descriptors
-
+from torch_geometric.data import Data
 
 def get_task_name_from_path(path: RichPath) -> str:
     # Use filename as task name:
@@ -31,6 +31,10 @@ class GraphData:
     adjacency_lists: List[np.ndarray]
     edge_features: List[np.ndarray]
 
+@dataclass(frozen=True)
+class PyG_MoleculeDatapoint:
+    task_name: str
+    graph: Data # This includes the label as well in the `y` property
 
 @dataclass(frozen=True)
 class MoleculeDatapoint:
