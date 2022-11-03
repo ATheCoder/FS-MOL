@@ -117,7 +117,6 @@ def validate_model(encoderModel):
     
 for epoch in range(1, number_of_epochs + 1):
     # Pre_training:
-    step = 0
     for batch_1, batch_2 in tqdm(zip(dl, dl2), total=len(dl)):
         optm.zero_grad()
         features_1 = model(batch_1)
@@ -125,7 +124,6 @@ for epoch in range(1, number_of_epochs + 1):
         loss = calculate_contrastive_loss(features_1, features_2)
         loss.backward()
         optm.step()
-        step += 1
-        if step % 10 == 0:
-            result = validate_model(encoderModel=model)
+        
+    result = validate_model(encoderModel=model)
     torch.save(model, f'./pretraining_feature_extractor_{epoch}.pt')
