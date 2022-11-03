@@ -1,4 +1,5 @@
 from more_itertools import partition
+import torch
 from fs_mol.custom.utils import convert_to_pyg_graph
 from fs_mol.data.fsmol_task import FSMolTask, PyG_MoleculeDatapoint
 from typing import List, Tuple
@@ -18,6 +19,8 @@ class PyGMolTask(FSMolTask):
         
         moleculeDatapoints = fsmol_task.samples
         
-        pyg_moleculardatapoints = list(map(convert_to_pyg_graph, moleculeDatapoints))
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        
+        pyg_moleculardatapoints = list(map(lambda x: convert_to_pyg_graph(x, device=device), moleculeDatapoints))
         
         return PyGMolTask(fsmol_task.name, pyg_moleculardatapoints)
