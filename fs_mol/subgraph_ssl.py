@@ -5,6 +5,7 @@ from pyprojroot import here as project_root
 
 sys.path.insert(0, str(project_root()))
 
+from fs_mol.utils.protonet_utils import run_on_batches
 from fs_mol.utils.test_utils import eval_model
 from fs_mol.models.protonet import PyG_PrototypicalNetwork
 from fs_mol.data.protonet import PyG_ProtonetBatch, get_protonet_batcher, task_sample_to_pn_task_sample
@@ -121,4 +122,5 @@ for epoch in range(1, number_of_epochs + 1):
     
     # Validation:
     if epoch % 100 == 0:
+        torch.save(model, f'./pretraining_feature_extractor_{epoch}.pt')
         validate_model(encoderModel=model)
