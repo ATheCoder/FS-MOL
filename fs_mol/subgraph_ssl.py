@@ -68,7 +68,7 @@ def calculate_contrastive_loss(x1, x2):
     return loss
 
 
-validation_dataset = FSMolDataset.from_directory('./datasets/fs-mol', task_list_file="./datasets/fsmol-0.1.json")
+validation_dataset = FSMolDataset.from_directory('./datasets/fs-mol', task_list_file="./datasets/fsmol-0.1.json", num_workers=0)
 
 def validate_model(encoderModel):
     model = PyG_PrototypicalNetwork(encoderModel)
