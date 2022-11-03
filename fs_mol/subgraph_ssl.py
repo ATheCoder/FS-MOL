@@ -2,19 +2,18 @@ import sys
 
 from pyprojroot import here as project_root
 
+
 sys.path.insert(0, str(project_root()))
 
+from fs_mol.utils.test_utils import eval_model
 from fs_mol.models.protonet import PyG_PrototypicalNetwork
 from fs_mol.data.protonet import PyG_ProtonetBatch, get_protonet_batcher, task_sample_to_pn_task_sample
 from fs_mol.data.pyg_task_reader import pyg_task_reader_fn
 from fs_mol.utils.metrics import BinaryEvalMetrics
-from fs_mol.utils.torch_utils import torchify
-from fs_mol.utils.protonet_utils import PrototypicalNetworkTrainerConfig, evaluate_protonet_model, run_on_batches
-from fs_mol.utils.test_utils import eval_model, FSMolTaskSampleEvalResults
 from fs_mol.data import FSMolDataset, FSMolTaskSample, DataFold
-from dpu_utils.utils.richpath import RichPath
 
 import torch
+import wandb
 from torch.optim import Adam
 from torch_geometric.loader import DataLoader
 from tqdm import tqdm
@@ -25,6 +24,8 @@ from fs_mol.modules.pyg_gnn import PyG_GraphFeatureExtractor
 from fs_mol.modules.graph_feature_extractor import GraphFeatureExtractorConfig
 from torch_geometric.loader import DataLoader
 
+wandb.init(project="FS-MOL-GraphCL")
+
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -34,10 +35,21 @@ dataset_subgraph_2 = FSMolSelfSupervisedInMemory('./datasets/self-supervised', t
 number_of_epochs = 1000
 batch_size = 32
 
+config = {
+    "graph_feature_extractor_config": GraphFeatureExtractorConfig(),
+    "pretraining_epochs": number_of_epochs,
+    "pre_training_batch_size": batch_size,
+    "testing_batch_size": 320,
+}
+
+wandb.init(config=config)
+
 dl = DataLoader(dataset_subgraph, batch_size=batch_size)
 dl2 = DataLoader(dataset_subgraph_2, batch_size=batch_size)
 
 model = PyG_GraphFeatureExtractor(GraphFeatureExtractorConfig()).to(device)
+
+wandb.watch(model)
 
 optm = Adam(model.parameters())
 
@@ -51,6 +63,7 @@ def calculate_contrastive_loss(x1, x2):
     pos_sim = sim_matrix[range(batch_size), range(batch_size)]
     loss = pos_sim / (sim_matrix.sum(dim=1) - pos_sim)
     loss = - torch.log(loss).mean()
+    wandb.log({"contrastive_loss": loss})
     return loss
 
 def validate_model(encoderModel):
