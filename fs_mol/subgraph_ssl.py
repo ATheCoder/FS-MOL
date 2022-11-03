@@ -123,4 +123,5 @@ for epoch in range(1, number_of_epochs + 1):
     # Validation:
     if epoch % 100 == 0:
         torch.save(model, f'./pretraining_feature_extractor_{epoch}.pt')
-        validate_model(encoderModel=model)
+        result = validate_model(encoderModel=model)
+        wandb.log(**result)
