@@ -95,6 +95,8 @@ def validate_model(encoderModel):
             batch_labels=batch_labels,
             train=False,
         )
+        
+        wandb.log(result_metrics)
 
         return result_metrics
     
@@ -103,8 +105,8 @@ def validate_model(encoderModel):
             dataset=dataset,
             train_set_sample_sizes=[16, 128], # This is from parse_command_line in `protonet_train.py`
             out_dir=None, # What is save Dir? Seems like this is None
-            num_samples=5, # This is from `--validation-num-samples` parse_command_line in `protonet_train.py` 
-            test_size_or_ratio=512, # `--validation-query-set-size` parse_command_line in `protonet_train.py` 
+            num_samples=5, # `PrototypicalNetworkTrainerConfig` from `protonet_utils.py`
+            test_size_or_ratio=256, # `PrototypicalNetworkTrainerConfig` from `protonet_utils.py`
             task_reader_fn=pyg_task_reader_fn,
             fold=DataFold.VALIDATION, # This is used from `validate_by_finetuning_on_tasks` in `protonet_utils.py` This is validation because during the training loop inside the `train_loop` function FS-MOL calls `validate_by_finetuning_on_tasks`
             seed=0 # This is from `validate_by_finetuning_on_tasks`'s default parameters
@@ -123,10 +125,6 @@ for epoch in range(1, number_of_epochs + 1):
         step += 1
         
         if step % 100 == 0:
+            result = validate_model(encoderModel=model)
             torch.save(model, f'./pretraining_feature_extractor_{epoch}_{step}.pt')
     
-    # Validation:
-    if epoch % 100 == 0:
-        torch.save(model, f'./pretraining_feature_extractor_{epoch}.pt')
-        result = validate_model(encoderModel=model)
-        wandb.log(**result)
