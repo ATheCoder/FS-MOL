@@ -67,12 +67,14 @@ def calculate_contrastive_loss(x1, x2):
     wandb.log({"contrastive_loss": loss})
     return loss
 
+
+validation_dataset = FSMolDataset.from_directory('./datasets/fs-mol', task_list_file="./datasets/fsmol-0.1.json")
+
 def validate_model(encoderModel):
     model = PyG_PrototypicalNetwork(encoderModel)
-    dataset = FSMolDataset.from_directory('./datasets/fs-mol', num_workers=0)
     
     def test_model_fn(task_sample: FSMolTaskSample, temp_out_folder: str, seed: int) -> BinaryEvalMetrics:
-        batch_size = 320 # default value on `evaluate_protonet_model` in `protonet_utils.py`
+        batch_size = 256 # `PrototypicalNetworkTrainerConfig` from `protonet_utils.py`
         
         # Batch size is 320 and all of the support sets should fit into a single batch
         train_batch = list(DataLoader(task_sample.train_samples, batch_size=batch_size))
@@ -97,12 +99,13 @@ def validate_model(encoderModel):
         )
         
         wandb.log(result_metrics.__dict__)
+        print(result_metrics)
 
         return result_metrics
     
     return eval_model(
             test_model_fn=test_model_fn,
-            dataset=dataset,
+            dataset=validation_dataset,
             train_set_sample_sizes=[16, 128], # This is from parse_command_line in `protonet_train.py`
             out_dir=None, # What is save Dir? Seems like this is None
             num_samples=5, # `PrototypicalNetworkTrainerConfig` from `protonet_utils.py`
@@ -114,6 +117,7 @@ def validate_model(encoderModel):
     
 for epoch in range(1, number_of_epochs + 1):
     # Pre_training:
+    step = 0
     for batch_1, batch_2 in tqdm(zip(dl, dl2), total=len(dl)):
         optm.zero_grad()
         features_1 = model(batch_1)
@@ -121,6 +125,7 @@ for epoch in range(1, number_of_epochs + 1):
         loss = calculate_contrastive_loss(features_1, features_2)
         loss.backward()
         optm.step()
-
-    result = validate_model(encoderModel=model)
+        step += 1
+        if step % 10 == 0:
+            result = validate_model(encoderModel=model)
     torch.save(model, f'./pretraining_feature_extractor_{epoch}.pt')
