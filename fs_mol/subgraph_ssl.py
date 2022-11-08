@@ -54,14 +54,14 @@ wandb.watch(model)
 
 optm = Adam(model.parameters())
 
-def calculate_contrastive_loss(x1, x2):
+def calculate_contrastive_loss(x1, x2, size):
     T = 0.1
     x1_abs = x1.norm(dim=1)
     x2_abs = x2.norm(dim=1)
     
     sim_matrix = torch.einsum('ik,jk->ij', x1, x2) / torch.einsum('i,j->ij', x1_abs, x2_abs)
     sim_matrix = torch.exp(sim_matrix / T)
-    pos_sim = sim_matrix[range(batch_size), range(batch_size)]
+    pos_sim = sim_matrix[range(size), range(size)]
     loss = pos_sim / (sim_matrix.sum(dim=1) - pos_sim)
     loss = - torch.log(loss).mean()
     wandb.log({"contrastive_loss": loss})
@@ -121,7 +121,7 @@ for epoch in range(1, number_of_epochs + 1):
         optm.zero_grad()
         features_1 = model(batch_1)
         features_2 = model(batch_2)
-        loss = calculate_contrastive_loss(features_1, features_2)
+        loss = calculate_contrastive_loss(features_1, features_2, batch_1.num_graphs)
         loss.backward()
         optm.step()
         
