@@ -1,4 +1,6 @@
 import sys
+import random
+import numpy as np
 
 from pyprojroot import here as project_root
 
@@ -24,6 +26,13 @@ from fs_mol.data.self_supervised_learning import FSMolSelfSupervisedInMemory
 from fs_mol.modules.pyg_gnn import PyG_GraphFeatureExtractor
 from fs_mol.modules.graph_feature_extractor import GraphFeatureExtractorConfig
 from torch_geometric.loader import DataLoader
+
+### CONFIGURATION FOR DETERMINISTIC RESULTS ###
+torch.manual_seed(0)
+random.seed(0)
+np.random.seed(0)
+torch.use_deterministic_algorithms(True)
+### CONFIGURATION FOR DETERMINISTIC RESULTS ###
 
 wandb.init(project="FS-MOL-GraphCL")
 
