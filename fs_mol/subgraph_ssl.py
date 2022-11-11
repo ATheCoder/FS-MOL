@@ -1,3 +1,4 @@
+from functools import partial
 import sys
 import random
 import numpy as np
@@ -14,6 +15,7 @@ from fs_mol.data.protonet import PyG_ProtonetBatch, get_protonet_batcher, task_s
 from fs_mol.data.pyg_task_reader import pyg_task_reader_fn
 from fs_mol.utils.metrics import BinaryEvalMetrics
 from fs_mol.data import FSMolDataset, FSMolTaskSample, DataFold
+from fs_mol.models.abstract_torch_fsmol_model import linear_warmup
 
 import torch
 import wandb
@@ -43,25 +45,31 @@ dataset_subgraph = FSMolSelfSupervisedInMemory('./datasets/self-supervised', tra
 dataset_subgraph_2 = FSMolSelfSupervisedInMemory('./datasets/self-supervised', transform=SubGraphAugmentation(0.2, device=device), device=device)
 
 number_of_epochs = 1000
-batch_size = 32
 
 config = {
     "graph_feature_extractor_config": GraphFeatureExtractorConfig(),
     "pretraining_epochs": number_of_epochs,
-    "pre_training_batch_size": batch_size,
+    "pre_training_batch_size": 32,
     "testing_batch_size": 320,
+    "learning_rate": 0.0001,
+    "warmup_steps": 100
 }
 
-wandb.init(config=config)
+wandb.init(project="FS-MOL-GraphCL", config=config)
 
-dl = DataLoader(dataset_subgraph, batch_size=batch_size)
-dl2 = DataLoader(dataset_subgraph_2, batch_size=batch_size)
+dl = DataLoader(dataset_subgraph, batch_size=config["pre_training_batch_size"])
+dl2 = DataLoader(dataset_subgraph_2, batch_size=config["pre_training_batch_size"])
 
 model = PyG_GraphFeatureExtractor(GraphFeatureExtractorConfig()).to(device)
 
 wandb.watch(model)
 
-optm = Adam(model.parameters())
+optm = Adam(model.parameters(), lr=config["learning_rate"])
+
+lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
+    optimizer=optm,
+    lr_lambda=partial(linear_warmup, warmup_steps=config["warmup_steps"]),  # for loaded GNN params
+)
 
 def calculate_contrastive_loss(x1, x2, size):
     T = 0.1
@@ -133,6 +141,7 @@ for epoch in range(1, number_of_epochs + 1):
         loss = calculate_contrastive_loss(features_1, features_2, batch_1.num_graphs)
         loss.backward()
         optm.step()
+        lr_scheduler.step()
         
     result = validate_model(encoderModel=model)
     torch.save(model, f'./pretraining_feature_extractor_{epoch}.pt')
