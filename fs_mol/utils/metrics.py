@@ -27,6 +27,7 @@ class BinaryEvalMetrics:
     roc_auc: float
     avg_precision: float
     kappa: float
+    delta_auc_pr: float
 
 
 BinaryMetricType = Literal[
@@ -43,7 +44,12 @@ def compute_binary_task_metrics(predictions: List[float], labels: List[float]) -
         roc_auc = 0.0
     else:
         roc_auc = roc_auc_score(labels, predictions)
-
+    auc_pr_random_classifier = np.count_nonzero(labels) / len(labels)
+    
+    avg_precision = average_precision_score(labels, predictions)
+    
+    delta_auc_pr = avg_precision - auc_pr_random_classifier
+    
     return BinaryEvalMetrics(
         size=len(predictions),
         acc=accuracy_score(labels, normalized_predictions),
@@ -52,8 +58,9 @@ def compute_binary_task_metrics(predictions: List[float], labels: List[float]) -
         prec=precision_score(labels, normalized_predictions, zero_division=1),
         recall=recall_score(labels, normalized_predictions, zero_division=1),
         roc_auc=roc_auc,
-        avg_precision=average_precision_score(labels, predictions),
+        avg_precision=avg_precision,
         kappa=cohen_kappa_score(labels, normalized_predictions),
+        delta_auc_pr=delta_auc_pr
     )
 
 
