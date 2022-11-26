@@ -1,9 +1,8 @@
 from functools import partial
 import sys
-import random
-import numpy as np
 
 from pyprojroot import here as project_root
+from dataclasses import asdict
 
 
 sys.path.insert(0, str(project_root()))
@@ -45,7 +44,12 @@ config = {
     "warmup_steps": 100
 }
 
-wandb.init(project="FS-MOL-GraphCL", config=config)
+config_snapshot = {
+    **config,
+    **asdict(GraphFeatureExtractorConfig())
+}
+
+wandb.init(project="FS-MOL-GraphCL", config=config_snapshot)
 
 dl = DataLoader(dataset_subgraph, batch_size=config["pre_training_batch_size"])
 dl2 = DataLoader(dataset_subgraph_2, batch_size=config["pre_training_batch_size"])
