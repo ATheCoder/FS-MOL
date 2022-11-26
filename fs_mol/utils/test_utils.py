@@ -233,9 +233,8 @@ def eval_model(
                         continue
 
                     test_metrics = test_model_fn(task_sample, temp_out_folder, local_seed)
-
-                    test_results.append(
-                        FSMolTaskSampleEvalResults(
+                    
+                    test_result = FSMolTaskSampleEvalResults(
                             task_name=task.name,
                             seed=local_seed,
                             num_train=train_size,
@@ -244,7 +243,10 @@ def eval_model(
                             fraction_pos_test=task_sample.test_pos_label_ratio,
                             **dataclasses.asdict(test_metrics),
                         )
-                    )
+                    
+                    wandb.log(dataclasses.asdict(test_result))
+
+                    test_results.append(test_result)
 
         task_to_results[task.name] = test_results
 
