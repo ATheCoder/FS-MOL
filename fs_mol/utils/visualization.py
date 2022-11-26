@@ -12,7 +12,7 @@ import torch
 # AtomRingInformationExtractor
 
 i_atomic_table = {
-    'UNK': 0,
+    'U': 0,
     'C': 1,
     'Br': 6,
     'N': 2,
