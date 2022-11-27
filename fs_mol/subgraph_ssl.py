@@ -40,7 +40,7 @@ config = {
     "testing_batch_size": 320,
     "learning_rate": 0.0001,
     "warmup_steps": 100,
-    "keep_ratio": 0.8,
+    "keep_ratio": 0.2,
 }
 
 config_snapshot = {
