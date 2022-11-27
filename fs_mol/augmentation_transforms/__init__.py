@@ -2,6 +2,7 @@ from typing import ForwardRef
 from torch_geometric.data import Data
 import numpy as np
 import torch
+from copy import deepcopy
 
 class SubGraphAugmentation(torch.nn.Module):
     def __init__(self, aug_ratio, device=None):
@@ -10,7 +11,8 @@ class SubGraphAugmentation(torch.nn.Module):
         self.device = device
         self.aug_ratio = aug_ratio
     
-    def forward(self, data: Data):
+    def forward(self, input_graph: Data):
+        data = deepcopy(input_graph)
         node_num, _ = data.x.size() # Count of Nodes
         _, edge_num = data.edge_index.size()
         sub_num = int(node_num * self.aug_ratio)
@@ -18,20 +20,21 @@ class SubGraphAugmentation(torch.nn.Module):
         edge_index = data.edge_index.cpu().numpy()
 
         idx_sub = [np.random.randint(node_num, size=1)[0]] # [3]
-        idx_neigh = set([n for n in edge_index[1][edge_index[0]==idx_sub[0]]]) # Neighbors of the choosen Node
+        idx_neigh = set([n for n in edge_index[1][edge_index[0]==idx_sub[0]]]).union(set([n for n in edge_index[0][edge_index[1]==idx_sub[0]]])) # Neighbors of the choosen Node
 
         count = 0
         while len(idx_sub) <= sub_num:
-            count = count + 1
             if count > node_num:
                 break
-            if len(idx_neigh) == 0:
+            if len(idx_neigh.difference(set(idx_sub))) == 0:
                 break
-            sample_node = np.random.choice(list(idx_neigh))
+            sample_node = np.random.choice(list(idx_neigh.difference(set(idx_sub))), replace=False)
             if sample_node in idx_sub:
                 continue
+            count = count + 1
             idx_sub.append(sample_node)
-            idx_neigh = idx_neigh.union(set([n for n in edge_index[1][edge_index[0]==idx_sub[-1]]]))
+            neighbors_of_current_node = set([n for n in edge_index[1][edge_index[0]==idx_sub[-1]]]).union(set([n for n in edge_index[0][edge_index[1]==idx_sub[-1]]]))
+            idx_neigh = idx_neigh.union(neighbors_of_current_node)
 
         idx_drop = [n for n in range(node_num) if not n in idx_sub]
         idx_nondrop = idx_sub
