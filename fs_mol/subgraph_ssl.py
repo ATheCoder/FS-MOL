@@ -30,8 +30,6 @@ from torch_geometric.loader import DataLoader
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-dataset_subgraph = FSMolSelfSupervisedInMemory('./datasets/self-supervised', transform=SubGraphAugmentation(0.2, device=device), device=device)
-dataset_subgraph_2 = FSMolSelfSupervisedInMemory('./datasets/self-supervised', transform=SubGraphAugmentation(0.2, device=device), device=device)
 
 number_of_epochs = 1000
 
@@ -41,13 +39,17 @@ config = {
     "pre_training_batch_size": 32,
     "testing_batch_size": 320,
     "learning_rate": 0.0001,
-    "warmup_steps": 100
+    "warmup_steps": 100,
+    "keep_ratio": 0.2,
 }
 
 config_snapshot = {
     **config,
-    **asdict(GraphFeatureExtractorConfig())
+    "graph_feature_extractor_config": asdict(GraphFeatureExtractorConfig())
 }
+
+dataset_subgraph = FSMolSelfSupervisedInMemory('./datasets/self-supervised', transform=SubGraphAugmentation(config['keep_ratio'], device=device), device=device)
+dataset_subgraph_2 = FSMolSelfSupervisedInMemory('./datasets/self-supervised', transform=SubGraphAugmentation(config['keep_ratio'], device=device), device=device)
 
 wandb.init(project="FS-MOL-GraphCL", config=config_snapshot)
 
