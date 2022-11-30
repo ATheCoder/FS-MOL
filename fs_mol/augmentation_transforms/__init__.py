@@ -11,8 +11,7 @@ class SubGraphAugmentation(torch.nn.Module):
         self.device = device
         self.aug_ratio = aug_ratio
     
-    def forward(self, input_graph: Data):
-        data = deepcopy(input_graph)
+    def forward(self, data: Data):
         node_num, _ = data.x.size() # Count of Nodes
         _, edge_num = data.edge_index.size()
         sub_num = int(node_num * self.aug_ratio)
