@@ -253,13 +253,13 @@ def eval_model(
 
         task_to_results[task.name] = test_results
 
-        generate_evaluation_chart(test_results)
+        
         
         if out_dir is not None:
             save_path = os.path.join(out_dir, f"{task.name}_eval_results.csv")
             write_csv_summary(save_path, test_results)
 
-
+    generate_evaluation_chart(sum(task_to_results.values(), []))
     logger.info(f"=== Completed evaluation on all tasks.")
 
     return task_to_results

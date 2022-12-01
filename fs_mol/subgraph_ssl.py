@@ -2,7 +2,7 @@ from functools import partial
 import sys
 
 from pyprojroot import here as project_root
-from dataclasses import asdict
+from dataclasses import asdict, fields
 
 
 sys.path.insert(0, str(project_root()))
@@ -51,7 +51,7 @@ config_snapshot = {
 dataset_subgraph = FSMolSelfSupervisedInMemory('./datasets/self-supervised', transform=SubGraphAugmentation(config['keep_ratio'], device=device), device=device)
 dataset_subgraph_2 = FSMolSelfSupervisedInMemory('./datasets/self-supervised', transform=SubGraphAugmentation(config['keep_ratio'], device=device), device=device)
 
-wandb.init(project="FS-MOL-GraphCL", config=config_snapshot)
+run = wandb.init(project="FS-MOL-GraphCL", config=config_snapshot)
 
 dl = DataLoader(dataset_subgraph, batch_size=config["pre_training_batch_size"])
 dl2 = DataLoader(dataset_subgraph_2, batch_size=config["pre_training_batch_size"])
@@ -59,6 +59,12 @@ dl2 = DataLoader(dataset_subgraph_2, batch_size=config["pre_training_batch_size"
 model = PyG_GraphFeatureExtractor(GraphFeatureExtractorConfig()).to(device)
 
 wandb.watch(model)
+
+run.define_metric('epoch')
+
+run.define_metric('optimistic_delta_auc_pr/*', step_metric='epoch')
+
+run.define_metric('optimistic_delta_auc_pr/*', step_metric='epoch')
 
 optm = Adam(model.parameters(), lr=config["learning_rate"])
 
@@ -80,6 +86,8 @@ def calculate_contrastive_loss(x1, x2, size):
     wandb.log({"contrastive_loss": loss})
     return loss
 
+
+model_artifact = wandb.Artifact('feature_extractor', type='model')
 
 validation_dataset = FSMolDataset.from_directory('./datasets/fs-mol', task_list_file="./datasets/fsmol-0.1.json", num_workers=0)
 
@@ -130,6 +138,7 @@ def validate_model(encoderModel):
     
 for epoch in range(1, number_of_epochs + 1):
     # Pre_training:
+    wandb.log({'epoch': epoch})
     for batch_1, batch_2 in tqdm(zip(dl, dl2), total=len(dl)):
         optm.zero_grad()
         features_1 = model(batch_1)
@@ -138,6 +147,9 @@ for epoch in range(1, number_of_epochs + 1):
         loss.backward()
         optm.step()
         lr_scheduler.step()
-        
+
     result = validate_model(encoderModel=model)
-    torch.save(model, f'./pretraining_feature_extractor_{epoch}.pt')
+    file_name = './pretraining_feature_extractor_{epoch}.pt'
+    torch.save(model, file_name)
+    # model_artifact.add_file(file_name)
+    # run.log_artifact(model_artifact)
