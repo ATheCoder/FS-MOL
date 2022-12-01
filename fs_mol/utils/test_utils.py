@@ -6,8 +6,10 @@ import json
 import logging
 import os
 import time
-from dataclasses import dataclass
+import pandas
+from dataclasses import asdict, dataclass
 from typing import Callable, Dict, Iterable, List, Optional, Tuple, Union
+
 
 from dpu_utils.utils.richpath import RichPath
 import wandb
@@ -23,6 +25,7 @@ from fs_mol.data.fsmol_task_sampler import (
 from fs_mol.utils.cli_utils import set_seed
 from fs_mol.utils.logging import prefix_log_msgs, set_up_logging
 from fs_mol.utils.metrics import BinaryEvalMetrics
+from fs_mol.wandb_report import generate_evaluation_chart
 
 
 logger = logging.getLogger(__name__)
@@ -250,6 +253,8 @@ def eval_model(
 
         task_to_results[task.name] = test_results
 
+        generate_evaluation_chart(test_results)
+        
         if out_dir is not None:
             save_path = os.path.join(out_dir, f"{task.name}_eval_results.csv")
             write_csv_summary(save_path, test_results)
