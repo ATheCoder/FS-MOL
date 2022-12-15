@@ -1,9 +1,9 @@
 import numpy as np
-import pyximport
-from . import algos
 import torch
-
+import pyximport
 pyximport.install(setup_args={'include_dirs': np.get_include()})
+from . import algos
+
 
 @torch.jit.script
 def convert_to_single_emb(x, offset: int = 512):
