@@ -11,6 +11,7 @@
 *.sln.docstates
 
 env
+saved_trains
 
 datasets/fs-mol
 
