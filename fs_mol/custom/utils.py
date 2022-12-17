@@ -18,7 +18,7 @@ def convert_to_pyg_graph(sample: MoleculeDatapoint, device=None):
 
     edge_feats = [0 for bond in single_bonds] + [1 for bond in double_bonds] + [2 for bond in triple_bonds]
     
-    pyg_data = Data(x=x, edge_index=edge_index, edge_attr=torch.tensor(edge_feats), y=torch.tensor(y), bool_label=sample.bool_label)
+    pyg_data = Data(x=x, edge_index=edge_index, edge_attr=torch.tensor(edge_feats), y=torch.tensor(y), bool_label=sample.bool_label, smiles=sample.smiles)
 
     if device == None:
         return pyg_data
