@@ -49,8 +49,9 @@ def get_atom_radical_electron_count(vec):
 def convert_graph_to_mol(graph: Data):
     mol = RWMol()
     node_to_idx = {}
-    for node in graph.x:
+    for index_in_features, node in enumerate(graph.x):
         a = Chem.Atom(get_atomic_symbol(node))
+        a.SetAtomMapNum(index_in_features)
         a.SetFormalCharge(get_atom_formal_charge(node))
         a.SetNumRadicalElectrons(get_atom_radical_electron_count(node))
         
