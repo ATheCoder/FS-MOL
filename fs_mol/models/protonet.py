@@ -203,7 +203,7 @@ class PrototypicalNetwork(nn.Module):
             query_features_flat = self.fc(query_features_flat)
 
         if self.config.distance_metric == "mahalanobis":
-            return calculate_mahalanobis_logits(support_features_flat, input_batch.support_labels, query_features_flat)
+            return calculate_mahalanobis_logits(support_features_flat, input_batch.support_labels, query_features_flat, self.device)
 
         else:  # euclidean
             logits = self._protonets_euclidean_classifier(
