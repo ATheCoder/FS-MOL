@@ -2,14 +2,14 @@ import torch
 from torch import nn
 
 class CrossAttention(nn.Module):
-    def __init__(self, dim, qkv_bias = False, attn_drop = 0., proj_drop = 0.):
+    def __init__(self, feat1_dim, feat2_dim, dim, qkv_bias = False, attn_drop = 0.2, proj_drop = 0.):
         super().__init__()
         self.scale = dim ** -0.5
         
         
-        self.wq = nn.Linear(dim, dim, bias=qkv_bias)
-        self.wk = nn.Linear(dim, dim, bias=qkv_bias)
-        self.wv = nn.Linear(dim, dim, bias=qkv_bias)
+        self.wq = nn.Linear(feat1_dim, dim, bias=qkv_bias)
+        self.wk = nn.Linear(feat2_dim, dim, bias=qkv_bias)
+        self.wv = nn.Linear(feat2_dim, dim, bias=qkv_bias)
         
         self.attn_drop = nn.Dropout(attn_drop)
         
@@ -34,22 +34,13 @@ class CrossAttention(nn.Module):
 class BidirectionalAttention(nn.Module):
     def __init__(self, graph_embedding_dim, mol_descs_dim, dim, emb_dim):
         super().__init__()
+        self.graph_to_desc_attn = CrossAttention(graph_embedding_dim, mol_descs_dim, dim)
         
-        self.graph_embedding_projector = nn.Sequential(nn.Linear(graph_embedding_dim, dim), nn.ReLU())
-        
-        self.molecular_desc_projector =  nn.Sequential(nn.Linear(mol_descs_dim, dim), nn.ReLU())
-        
-        self.graph_to_desc_attn = CrossAttention(dim)
-        
-        self.desc_to_graph_attn = CrossAttention(dim)
+        self.desc_to_graph_attn = CrossAttention(mol_descs_dim, graph_embedding_dim, dim)
         
         self.aggr_proj = nn.Linear(2 * dim, emb_dim)
         
     def forward(self, graph_embeddings, mol_descs):
-        graph_embeddings = self.graph_embedding_projector(graph_embeddings)
-        
-        mol_descs = self.molecular_desc_projector(mol_descs)
-        
         attn_graph_to_desc = self.graph_to_desc_attn(graph_embeddings, mol_descs)
         
         attn_desc_to_graph = self.desc_to_graph_attn(mol_descs, graph_embeddings)
@@ -58,11 +49,3 @@ class BidirectionalAttention(nn.Module):
         
         return self.aggr_proj(result)
     
-    
-model = BidirectionalAttention(512, 200, 256, 512)
-
-example_graph_embeddings = torch.rand((128, 512))
-example_mol_descs = torch.rand((128, 200))
-
-
-model(example_graph_embeddings, example_mol_descs)
