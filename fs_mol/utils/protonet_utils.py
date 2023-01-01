@@ -52,6 +52,8 @@ class PrototypicalNetworkTrainerConfig(PrototypicalNetworkConfig):
 
     learning_rate: float = 0.001
     clip_value: Optional[float] = None
+    
+    use_attention: bool = False
 
 
 def run_on_batches(
