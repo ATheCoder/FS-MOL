@@ -11,6 +11,7 @@ from fs_mol.modules.graph_feature_extractor import (
 )
 from fs_mol.data.protonet import ProtoNetBatch, PyG_ProtonetBatch
 from fs_mol.modules.pyg_gnn import PyG_GraphFeatureExtractor
+from fs_mol.modules.bidirectional_attention import BidirectionalAttention
 
 
 FINGERPRINT_DIM = 2048
@@ -125,6 +126,7 @@ class PrototypicalNetworkConfig:
         "gnn", "ecfp", "pc-descs", "gnn+ecfp", "ecfp+fc", "pc-descs+fc", "gnn+ecfp+pc-descs+fc"
     ] = "gnn+ecfp+fc"
     distance_metric: Literal["mahalanobis", "euclidean"] = "mahalanobis"
+    use_attention: bool = False
     
 class PyG_PrototypicalNetwork(nn.Module):
     def __init__(self, graphFeatureExtractor: PyG_GraphFeatureExtractor):
@@ -151,6 +153,7 @@ class PrototypicalNetwork(nn.Module):
     def __init__(self, config: PrototypicalNetworkConfig):
         super().__init__()
         self.config = config
+        graph_repr_dim = config.graph_feature_extractor_config.readout_config.output_dim
 
         # Create GNN if needed:
         if self.config.used_features.startswith("gnn"):
@@ -165,7 +168,7 @@ class PrototypicalNetwork(nn.Module):
             # Determine dimension:
             fc_in_dim = 0
             if "gnn" in self.config.used_features:
-                fc_in_dim += self.config.graph_feature_extractor_config.readout_config.output_dim
+                fc_in_dim += graph_repr_dim
             if "ecfp" in self.config.used_features:
                 fc_in_dim += FINGERPRINT_DIM
             if "pc-descs" in self.config.used_features:
@@ -176,6 +179,17 @@ class PrototypicalNetwork(nn.Module):
                 nn.ReLU(),
                 nn.Linear(1024, 512),
             )
+        
+        if self.config.use_attention:
+            descriptor_dim = 0
+            
+            if "ecfp" in self.config.used_features:
+                descriptor_dim += FINGERPRINT_DIM
+            if "pc-descs" in self.config.used_features:
+                descriptor_dim += PHYS_CHEM_DESCRIPTORS_DIM
+                
+                
+            self.attn = BidirectionalAttention(graph_repr_dim, descriptor_dim, 1024, 512)
 
     @property
     def device(self) -> torch.device:
@@ -189,18 +203,30 @@ class PrototypicalNetwork(nn.Module):
             support_features.append(self.graph_feature_extractor(input_batch.support_features))
             query_features.append(self.graph_feature_extractor(input_batch.query_features))
         if "ecfp" in self.config.used_features:
-            support_features.append(input_batch.support_features.fingerprints)
-            query_features.append(input_batch.query_features.fingerprints)
+            support_features.append(input_batch.support_features.fingerprints.to(torch.float32))
+            query_features.append(input_batch.query_features.fingerprints.to(torch.float32))
         if "pc-descs" in self.config.used_features:
-            support_features.append(input_batch.support_features.descriptors)
-            query_features.append(input_batch.query_features.descriptors)
+            support_features.append(input_batch.support_features.descriptors.to(torch.float32))
+            query_features.append(input_batch.query_features.descriptors.to(torch.float32))
+            
+            
+        if self.config.use_attention:
+            support_mol_descs = torch.cat(support_features[1:], dim=-1)
+            query_mol_descs = torch.cat(query_features[1:], dim=-1)
 
-        support_features_flat = torch.cat(support_features, dim=1)
-        query_features_flat = torch.cat(query_features, dim=1)
+            support_graphs_embeddings = support_features[0]
+            query_graphs_embeddings = query_features[0]
 
-        if self.use_fc:
-            support_features_flat = self.fc(support_features_flat)
-            query_features_flat = self.fc(query_features_flat)
+            support_features_flat = self.attn(support_graphs_embeddings, support_mol_descs)
+            query_features_flat = self.attn(query_graphs_embeddings, query_mol_descs)
+        
+        else:
+            support_features_flat = torch.cat(support_features, dim=1)
+            query_features_flat = torch.cat(query_features, dim=1)
+
+            if self.use_fc:
+                support_features_flat = self.fc(support_features_flat)
+                query_features_flat = self.fc(query_features_flat)
 
         if self.config.distance_metric == "mahalanobis":
             return calculate_mahalanobis_logits(support_features_flat, input_batch.support_labels, query_features_flat, self.device)
