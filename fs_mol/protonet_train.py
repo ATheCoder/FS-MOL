@@ -109,6 +109,12 @@ def parse_command_line():
         default=None,
         help="Path to a pretrained GNN model to use as a starting point.",
     )
+    parser.add_argument(
+        "--use-attention",
+        type=bool,
+        default=False,
+        help="Set this to true in order to use attention"
+    )
     args = parser.parse_args()
     return args
 
@@ -129,6 +135,7 @@ def make_trainer_config(args: argparse.Namespace) -> PrototypicalNetworkTrainerC
         num_train_steps=args.num_train_steps,
         learning_rate=args.lr,
         clip_value=args.clip_value,
+        use_attention=args.use_attention
     )
 
 
