@@ -188,7 +188,11 @@ class PrototypicalNetworkTrainer(PrototypicalNetwork):
     def __init__(self, config: PrototypicalNetworkTrainerConfig):
         super().__init__(config)
         self.config = config
-        self.optimizer = torch.optim.Adam(self.parameters(), config.learning_rate)
+        
+        base_lr = self.config.learning_rate
+        
+        self.optimizer = torch.optim.Adam([{'params': self.graph_feature_extractor.parameters(), 'lr': base_lr}, {'params': self.fc.parameters(), 'lr': base_lr}, {'params': self.attn.parameters(), 'lr': base_lr / 100}])
+        
         self.lr_scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None
 
     def get_model_state(self) -> Dict[str, Any]:
@@ -301,7 +305,7 @@ class PrototypicalNetworkTrainer(PrototypicalNetwork):
 
     def train_loop(self, out_dir: str, dataset: FSMolDataset, device: torch.device, aml_run=None):
         self.save_model(os.path.join(out_dir, "best_validation.pt"))
-        wandb.watch(self)
+        wandb.watch(self, log='all')
 
         train_task_sample_iterator = iter(
             get_protonet_task_sample_iterable(
@@ -371,6 +375,9 @@ class PrototypicalNetworkTrainer(PrototypicalNetwork):
                     f"Validated at train step [{step}/{self.config.num_train_steps}],"
                     f" Valid Avg. Prec.: {valid_metric:.3f}",
                 )
+                
+                torch.save(self.state_dict(), os.path.join(out_dir, "latest_model.pt"))
+                torch.save(self.fc.state_dict(), os.path.join(out_dir, "fc_parameters.pt"))
 
                 # save model if validation avg prec is the best so far
                 if valid_metric > best_validation_avg_prec:
