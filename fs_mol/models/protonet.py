@@ -189,7 +189,7 @@ class PrototypicalNetwork(nn.Module):
                 descriptor_dim += PHYS_CHEM_DESCRIPTORS_DIM
                 
                 
-            self.attn = BidirectionalAttention(graph_repr_dim, descriptor_dim, 1024, 512)
+            self.attn = BidirectionalAttention(graph_repr_dim, descriptor_dim, output_dim=512, n_heads=8)
 
     @property
     def device(self) -> torch.device:
