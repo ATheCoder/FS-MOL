@@ -8,6 +8,7 @@ import wandb
 
 import numpy as np
 import torch
+from torch import nn
 from pyprojroot import here as project_root
 
 sys.path.insert(0, str(project_root()))
@@ -21,7 +22,7 @@ from fs_mol.data.protonet import (
     get_protonet_batcher,
     task_sample_to_pn_task_sample,
 )
-from fs_mol.models.protonet import PrototypicalNetwork, PrototypicalNetworkConfig
+from fs_mol.models.protonet import PrototypicalNetwork, PrototypicalNetworkConfig, _compute_class_means_and_precisions, _estimate_cov, _extract_class_indices, calculate_mahalanobis_logits
 from fs_mol.models.abstract_torch_fsmol_model import MetricType
 from fs_mol.utils.metrics import (
     BinaryEvalMetrics,
@@ -158,6 +159,7 @@ def validate_by_finetuning_on_tasks(
     aml_run=None,
     metric_to_use: MetricType = "avg_precision",
 ) -> float:
+    model.train(False)
     """
     Validation function for prototypical networks. Similar to test function;
     each validation task is used to evaluate the model more than once, the
@@ -184,16 +186,100 @@ def validate_by_finetuning_on_tasks(
     return mean_metrics[metric_to_use][0]
 
 
-class PrototypicalNetworkTrainer(PrototypicalNetwork):
-    def __init__(self, config: PrototypicalNetworkTrainerConfig):
-        super().__init__(config)
+class PrototypicalNetworkTrainer(nn.Module):
+    def __init__(self, config: PrototypicalNetworkTrainerConfig, encoder_model: nn.Module):
+        super().__init__()
         self.config = config
+        
+        self.encoder = encoder_model
         
         base_lr = self.config.learning_rate
         
-        self.optimizer = torch.optim.Adam([{'params': self.graph_feature_extractor.parameters(), 'lr': base_lr}, {'params': self.fc.parameters(), 'lr': base_lr}, {'params': self.attn.parameters(), 'lr': base_lr / 100}])
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=base_lr)
         
         self.lr_scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None
+        
+    @property
+    def device(self) -> torch.device:
+        return next(self.parameters()).device
+
+    def forward(self, input_batch: ProtoNetBatch):
+        encoded_support_features = self.encoder(input_batch.support_features)
+        support_labels = input_batch.support_labels
+        
+        encoded_query_features = self.encoder(input_batch.query_features)
+
+        if self.config.distance_metric == "mahalanobis":
+            return calculate_mahalanobis_logits(encoded_support_features, support_labels, encoded_query_features, self.device)
+
+        else:  # euclidean
+            logits = self._protonets_euclidean_classifier(
+                encoded_support_features,
+                encoded_query_features,
+                support_labels,
+            )
+
+        return logits
+            
+
+    def compute_class_means_and_precisions(self,
+        features: torch.Tensor, labels: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        return _compute_class_means_and_precisions(features=features, labels=labels, device=self.device)
+
+    @staticmethod
+    def _estimate_cov(
+        examples: torch.Tensor, rowvar: bool = False, inplace: bool = False
+    ) -> torch.Tensor:
+        return _estimate_cov(examples=examples, rowvar=rowvar, inplace=inplace)
+
+    @staticmethod
+    def _extract_class_indices(labels: torch.Tensor, which_class: torch.Tensor) -> torch.Tensor:
+        return _extract_class_indices(labels=labels, which_class=which_class)
+
+    @staticmethod
+    def compute_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        return nn.functional.cross_entropy(logits, labels.long())
+
+    def _protonets_euclidean_classifier(
+        self,
+        support_features: torch.Tensor,
+        query_features: torch.Tensor,
+        support_labels: torch.Tensor,
+    ) -> torch.Tensor:
+        class_prototypes = self._compute_class_prototypes(support_features, support_labels)
+        logits = self._euclidean_distances(query_features, class_prototypes)
+        return logits
+
+    def _compute_class_prototypes(
+        self, support_features: torch.Tensor, support_labels: torch.Tensor
+    ) -> torch.Tensor:
+        means = []
+        for c in torch.unique(support_labels):
+            # filter out feature vectors which have class c
+            class_features = torch.index_select(
+                support_features, 0, self._extract_class_indices(support_labels, c)
+            )
+            means.append(torch.mean(class_features, dim=0))
+        return torch.stack(means)
+
+    def _euclidean_distances(
+        self, query_features: torch.Tensor, class_prototypes: torch.Tensor
+    ) -> torch.Tensor:
+        num_query_features = query_features.shape[0]
+        num_prototypes = class_prototypes.shape[0]
+
+        distances = (
+            (
+                query_features.unsqueeze(1).expand(num_query_features, num_prototypes, -1)
+                - class_prototypes.unsqueeze(0).expand(num_query_features, num_prototypes, -1)
+            )
+            .pow(2)
+            .sum(dim=2)
+        )
+
+        return -distances
+
 
     def get_model_state(self) -> Dict[str, Any]:
         return {
@@ -327,6 +413,7 @@ class PrototypicalNetworkTrainer(PrototypicalNetwork):
         )
 
         for step in range(1, self.config.num_train_steps + 1):
+            self.train(True)
             torch.set_grad_enabled(True)
             self.optimizer.zero_grad()
 
@@ -355,7 +442,7 @@ class PrototypicalNetworkTrainer(PrototypicalNetwork):
 
             task_batch_mean_loss = np.mean(task_batch_losses)
             task_batch_avg_metrics = avg_task_metrics_list(task_batch_metrics)
-            wandb.log({"task_batch_mean_loss": task_batch_mean_loss, "task_batch_avg_precision": task_batch_avg_metrics["avg_precision"][0], "task_batch_avg_kappa": task_batch_avg_metrics["kappa"][0], "task_batch_avg_acc": task_batch_avg_metrics["acc"][0]})
+            wandb.log({"loss": task_batch_mean_loss, "avg_task_prec": task_batch_avg_metrics["avg_precision"][0], "avg_task_kappa": task_batch_avg_metrics["kappa"][0], "avg_task_acc": task_batch_avg_metrics["acc"][0]})
             metric_logger.log_metrics(
                 loss=task_batch_mean_loss,
                 avg_prec=task_batch_avg_metrics["avg_precision"][0],
@@ -376,8 +463,10 @@ class PrototypicalNetworkTrainer(PrototypicalNetwork):
                     f" Valid Avg. Prec.: {valid_metric:.3f}",
                 )
                 
+                wandb.log({"validation_prec": valid_metric})
+                
                 torch.save(self.state_dict(), os.path.join(out_dir, "latest_model.pt"))
-                torch.save(self.fc.state_dict(), os.path.join(out_dir, "fc_parameters.pt"))
+                torch.save(self.optimizer.state_dict(), os.path.join(out_dir, "optimizer_state.pt"))
 
                 # save model if validation avg prec is the best so far
                 if valid_metric > best_validation_avg_prec:

@@ -9,7 +9,7 @@ from fs_mol.modules.graph_feature_extractor import (
     GraphFeatureExtractor,
     GraphFeatureExtractorConfig,
 )
-from fs_mol.data.protonet import ProtoNetBatch, PyG_ProtonetBatch
+from fs_mol.data.protonet import MoleculeProtoNetFeatures, ProtoNetBatch, PyG_ProtonetBatch
 from fs_mol.modules.pyg_gnn import PyG_GraphFeatureExtractor
 from fs_mol.modules.bidirectional_attention import BidirectionalAttention
 
@@ -147,9 +147,65 @@ class PyG_PrototypicalNetwork(nn.Module):
         support_labels = input_batch.support_graphs.y
         
         return calculate_mahalanobis_logits(support_features, support_labels, query_features, device=self.device)
+
+@dataclass(frozen=True)
+class AttentionBasedEncoderConfig(PrototypicalNetworkConfig):
+    n_heads: int = 8
+    d_ff: int = 10240
+    attn_output_dim: int = 512
+    
+    
+class AttentionBasedEncoder(nn.Module):
+    def __init__(self, config: AttentionBasedEncoderConfig) -> None:
+        super().__init__()
+        self.config = config
+        graph_repr_dim = config.graph_feature_extractor_config.readout_config.output_dim
+        
+        self.graph_feature_extractor = GraphFeatureExtractor(
+                config.graph_feature_extractor_config
+            )
+        
+        self.use_fc = self.config.used_features.endswith("+fc")
+        
+        if self.use_fc:
+            # Determine dimension:
+            fc_in_dim = 0
+            if "ecfp" in self.config.used_features:
+                fc_in_dim += FINGERPRINT_DIM
+            if "pc-descs" in self.config.used_features:
+                fc_in_dim += PHYS_CHEM_DESCRIPTORS_DIM
+        
+            self.fc = nn.Sequential(
+                nn.Linear(fc_in_dim, 1024),
+                nn.ReLU(),
+                nn.Linear(1024, 512),
+            )
+        
+        desc_length = 512 if self.use_fc else fc_in_dim
+        self.attention = BidirectionalAttention(graph_repr_dim, desc_length, config.n_heads, config.d_ff, config.attn_output_dim)
+            
+    def forward(self, raw_features: MoleculeProtoNetFeatures):
+        graph_features = self.graph_feature_extractor(raw_features)
+        
+        
+        secondary_features = []
+        
+        if "ecfp" in self.config.used_features:
+            secondary_features.append(raw_features.fingerprints.to(torch.float32))
+        if "pc-descs" in self.config.used_features:
+            secondary_features.append(raw_features.descriptors.to(torch.float32))
+        
+        secondary_features = torch.cat(secondary_features, dim=-1)
+        
+        if self.use_fc:
+            secondary_features = self.fc(secondary_features)
+        
+        return self.attention(graph_features, secondary_features)
+        
         
 
-class PrototypicalNetwork(nn.Module):
+
+class VanillaFSMolEncoder(nn.Module):
     def __init__(self, config: PrototypicalNetworkConfig):
         super().__init__()
         self.config = config
@@ -179,63 +235,55 @@ class PrototypicalNetwork(nn.Module):
                 nn.ReLU(),
                 nn.Linear(1024, 512),
             )
-        
-        if self.config.use_attention:
-            descriptor_dim = 0
+
+    @property
+    def device(self) -> torch.device:
+        return next(self.parameters()).device
+
+    def forward(self, raw_features: MoleculeProtoNetFeatures):
+        final_features: List[torch.Tensor] = []
+
+        if "gnn" in self.config.used_features:
+            final_features.append(self.graph_feature_extractor(raw_features))
+        if "ecfp" in self.config.used_features:
+            final_features.append(raw_features.fingerprints.to(torch.float32))
+        if "pc-descs" in self.config.used_features:
+            final_features.append(raw_features.descriptors.to(torch.float32))
             
-            if "ecfp" in self.config.used_features:
-                descriptor_dim += FINGERPRINT_DIM
-            if "pc-descs" in self.config.used_features:
-                descriptor_dim += PHYS_CHEM_DESCRIPTORS_DIM
-                
-                
-            self.attn = BidirectionalAttention(graph_repr_dim, descriptor_dim, output_dim=512, n_heads=8)
+
+        final_features = torch.cat(final_features, dim=1)
+
+        if self.use_fc:
+            final_features = self.fc(final_features)
+
+        return final_features
+            
+
+
+class PrototypicalNetwork(nn.Module):
+    def __init__(self, model: nn.Module):
+        super().__init__()
+        
+        self.encoder = model
 
     @property
     def device(self) -> torch.device:
         return next(self.parameters()).device
 
     def forward(self, input_batch: ProtoNetBatch):
-        support_features: List[torch.Tensor] = []
-        query_features: List[torch.Tensor] = []
-
-        if "gnn" in self.config.used_features:
-            support_features.append(self.graph_feature_extractor(input_batch.support_features))
-            query_features.append(self.graph_feature_extractor(input_batch.query_features))
-        if "ecfp" in self.config.used_features:
-            support_features.append(input_batch.support_features.fingerprints.to(torch.float32))
-            query_features.append(input_batch.query_features.fingerprints.to(torch.float32))
-        if "pc-descs" in self.config.used_features:
-            support_features.append(input_batch.support_features.descriptors.to(torch.float32))
-            query_features.append(input_batch.query_features.descriptors.to(torch.float32))
-            
-            
-        if self.config.use_attention:
-            support_mol_descs = torch.cat(support_features[1:], dim=-1)
-            query_mol_descs = torch.cat(query_features[1:], dim=-1)
-
-            support_graphs_embeddings = support_features[0]
-            query_graphs_embeddings = query_features[0]
-
-            support_features_flat = self.attn(support_graphs_embeddings, support_mol_descs)
-            query_features_flat = self.attn(query_graphs_embeddings, query_mol_descs)
+        encoded_support_features = self.encoder(input_batch.support_features)
+        support_labels = input_batch.support_labels
         
-        else:
-            support_features_flat = torch.cat(support_features, dim=1)
-            query_features_flat = torch.cat(query_features, dim=1)
-
-            if self.use_fc:
-                support_features_flat = self.fc(support_features_flat)
-                query_features_flat = self.fc(query_features_flat)
+        encoded_query_features = self.encoder(input_batch.query_features)
 
         if self.config.distance_metric == "mahalanobis":
-            return calculate_mahalanobis_logits(support_features_flat, input_batch.support_labels, query_features_flat, self.device)
+            return calculate_mahalanobis_logits(encoded_support_features, support_labels, encoded_query_features, self.device)
 
         else:  # euclidean
             logits = self._protonets_euclidean_classifier(
-                support_features_flat,
-                query_features_flat,
-                input_batch.support_labels,
+                encoded_support_features,
+                encoded_query_features,
+                support_labels,
             )
 
         return logits

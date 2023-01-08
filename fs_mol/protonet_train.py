@@ -18,6 +18,9 @@ from fs_mol.utils.protonet_utils import (
     PrototypicalNetworkTrainerConfig,
     PrototypicalNetworkTrainer,
 )
+from fs_mol.models.contrastive_protonet import PrototypicalNetworkConfig
+from fs_mol.models.protonet import AttentionBasedEncoder, AttentionBasedEncoderConfig, VanillaFSMolEncoder
+from fs_mol.models.dumb_graph_attention import DumbGraphAttention
 
 from pathlib import Path
 
@@ -56,6 +59,14 @@ def parse_command_line():
         help="Choice of distance to use.",
     )
     add_graph_feature_extractor_arguments(parser)
+    
+    parser.add_argument(
+        "--encoder-type",
+        type=str,
+        choices=['vanilla', 'bidirectional-attention'],
+        default='vanilla',
+        help='Choose one of several models as the encoder'
+    )
 
     parser.add_argument("--support_set_size", type=int, default=64, help="Size of support set")
     parser.add_argument(
@@ -142,12 +153,39 @@ def make_trainer_config(args: argparse.Namespace) -> PrototypicalNetworkTrainerC
         num_train_steps=args.num_train_steps,
         learning_rate=args.lr,
         clip_value=args.clip_value,
-        use_attention=args.use_attention
+        use_attention=args.use_attention,
     )
+    
+    
+model_name_to_implementation_map = {
+    'vanilla': VanillaFSMolEncoder,
+    'bidirectional-attention': AttentionBasedEncoder
+}
+
+def vanilla_config_generator(args: argparse.Namespace):
+    return PrototypicalNetworkConfig(
+        graph_feature_extractor_config=make_graph_feature_extractor_config_from_args(args),
+        used_features=args.features,
+        distance_metric=args.distance_metric,
+    )
+    
+def bidirectional_encoder_config_generator(args: argparse.Namespace):
+    return AttentionBasedEncoder()
+
+model_name_to_config_map = {
+    'vanilla': vanilla_config_generator,
+    'bidirectional-attention': bidirectional_encoder_config_generator
+}
+
+def make_model_config(model_name: str, args: argparse.Namespace):
+    model_config_generator = model_name_to_config_map[model_name]
+    
+    return model_config_generator(args)
 
 
 def main():
     args = parse_command_line()
+    
     config = make_trainer_config(args)
     
     is_resume = True if args.checkpoint else False
@@ -159,7 +197,11 @@ def main():
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model_trainer = PrototypicalNetworkTrainer(config=config).to(device)
+    
+    encoder_name = args.encoder_type
+    
+    encoder_model = model_name_to_implementation_map[encoder_name](make_model_config(encoder_name, args))
+    model_trainer = PrototypicalNetworkTrainer(config=config, encoder_model=encoder_model).to(device)
     
     if args.checkpoint:
         checkpoint_folder = Path(args.checkpoint)
@@ -180,13 +222,13 @@ def main():
     run.finish()
 
 
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception:
-        import traceback
-        import pdb
+# if __name__ == "__main__":
+#     try:
+main()
+    # except Exception:
+    #     import traceback
+    #     import pdb
 
-        _, value, tb = sys.exc_info()
-        traceback.print_exc()
-        pdb.post_mortem(tb)
+    #     _, value, tb = sys.exc_info()
+    #     traceback.print_exc()
+    #     pdb.post_mortem(tb)
