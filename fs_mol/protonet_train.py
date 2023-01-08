@@ -170,7 +170,7 @@ def vanilla_config_generator(args: argparse.Namespace):
     )
     
 def bidirectional_encoder_config_generator(args: argparse.Namespace):
-    return AttentionBasedEncoder()
+    return AttentionBasedEncoderConfig()
 
 model_name_to_config_map = {
     'vanilla': vanilla_config_generator,
