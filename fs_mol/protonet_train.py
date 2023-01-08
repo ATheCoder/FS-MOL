@@ -123,12 +123,6 @@ def parse_command_line():
         help="Path to a pretrained GNN model to use as a starting point.",
     )
     parser.add_argument(
-        "--use-attention",
-        type=bool,
-        default=False,
-        help="Set this to true in order to use attention"
-    )
-    parser.add_argument(
         "--checkpoint",
         type=str,
         help="Path to a check point to continue from"
