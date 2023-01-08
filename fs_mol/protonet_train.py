@@ -19,6 +19,8 @@ from fs_mol.utils.protonet_utils import (
     PrototypicalNetworkTrainer,
 )
 
+from pathlib import Path
+
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +117,11 @@ def parse_command_line():
         default=False,
         help="Set this to true in order to use attention"
     )
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        help="Path to a check point to continue from"
+    )
     args = parser.parse_args()
     return args
 
@@ -142,7 +149,10 @@ def make_trainer_config(args: argparse.Namespace) -> PrototypicalNetworkTrainerC
 def main():
     args = parse_command_line()
     config = make_trainer_config(args)
-    run = wandb.init(config=config)
+    
+    is_resume = True if args.checkpoint else False
+    
+    run = wandb.init(config=config, resume=is_resume)
 
     out_dir, dataset, aml_run = set_up_train_run(
         f"ProtoNet_{config.used_features}", args, torch=True
@@ -150,6 +160,13 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model_trainer = PrototypicalNetworkTrainer(config=config).to(device)
+    
+    if args.checkpoint:
+        checkpoint_folder = Path(args.checkpoint)
+        
+        model_trainer.load_state_dict(torch.load(checkpoint_folder / 'latest_model.pt'))
+        model_trainer.optimizer.load_state_dict(torch.load(checkpoint_folder / 'optimizer_state.pt'))
+    
 
     logger.info(f"\tDevice: {device}")
     logger.info(f"\tNum parameters {sum(p.numel() for p in model_trainer.parameters())}")
