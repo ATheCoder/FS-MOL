@@ -6,6 +6,9 @@ import json
 import torch
 from pyprojroot import here as project_root
 import wandb
+from fs_mol.utils.protonet.encoder_model_selector import make_proto_encoder_model
+
+from fs_mol.utils.wandb import make_trainer_config
 
 sys.path.insert(0, str(project_root()))
 
@@ -20,7 +23,7 @@ from fs_mol.utils.protonet_utils import (
 )
 from fs_mol.models.contrastive_protonet import PrototypicalNetworkConfig
 from fs_mol.models.protonet import AttentionBasedEncoder, AttentionBasedEncoderConfig, VanillaFSMolEncoder
-from fs_mol.models.dumb_graph_attention import DumbGraphAttention
+# from fs_mol.models.dumb_graph_attention import DumbGraphAttention
 
 from pathlib import Path
 
@@ -131,60 +134,12 @@ def parse_command_line():
     return args
 
 
-def make_trainer_config(args: argparse.Namespace) -> PrototypicalNetworkTrainerConfig:
-    return PrototypicalNetworkTrainerConfig(
-        graph_feature_extractor_config=make_graph_feature_extractor_config_from_args(args),
-        used_features=args.features,
-        distance_metric=args.distance_metric,
-        batch_size=args.batch_size,
-        tasks_per_batch=args.tasks_per_batch,
-        support_set_size=args.support_set_size,
-        query_set_size=args.query_set_size,
-        validate_every_num_steps=args.validate_every,
-        validation_support_set_sizes=tuple(args.validation_support_set_sizes),
-        validation_query_set_size=args.validation_query_set_size,
-        validation_num_samples=args.validation_num_samples,
-        num_train_steps=args.num_train_steps,
-        learning_rate=args.lr,
-        clip_value=args.clip_value,
-        use_attention=args.use_attention,
-    )
-    
-    
-model_name_to_implementation_map = {
-    'vanilla': VanillaFSMolEncoder,
-    'bidirectional-attention': AttentionBasedEncoder
-}
-
-def vanilla_config_generator(args: argparse.Namespace):
-    return PrototypicalNetworkConfig(
-        graph_feature_extractor_config=make_graph_feature_extractor_config_from_args(args),
-        used_features=args.features,
-        distance_metric=args.distance_metric,
-    )
-    
-def bidirectional_encoder_config_generator(args: argparse.Namespace):
-    return AttentionBasedEncoderConfig()
-
-model_name_to_config_map = {
-    'vanilla': vanilla_config_generator,
-    'bidirectional-attention': bidirectional_encoder_config_generator
-}
-
-def make_model_config(model_name: str, args: argparse.Namespace):
-    model_config_generator = model_name_to_config_map[model_name]
-    
-    return model_config_generator(args)
-
-
 def main():
     args = parse_command_line()
     
     config = make_trainer_config(args)
     
-    is_resume = True if args.checkpoint else False
-    
-    run = wandb.init(config=config, resume=is_resume)
+    run = wandb.init(config=config, resume=False)
 
     out_dir, dataset, aml_run = set_up_train_run(
         f"ProtoNet_{config.used_features}", args, torch=True
@@ -192,9 +147,7 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    encoder_name = args.encoder_type
-    
-    encoder_model = model_name_to_implementation_map[encoder_name](make_model_config(encoder_name, args))
+    encoder_model = make_proto_encoder_model(args)
     model_trainer = PrototypicalNetworkTrainer(config=config, encoder_model=encoder_model).to(device)
     
     if args.checkpoint:
@@ -216,13 +169,13 @@ def main():
     run.finish()
 
 
-# if __name__ == "__main__":
-#     try:
-main()
-    # except Exception:
-    #     import traceback
-    #     import pdb
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception:
+        import traceback
+        import pdb
 
-    #     _, value, tb = sys.exc_info()
-    #     traceback.print_exc()
-    #     pdb.post_mortem(tb)
+        _, value, tb = sys.exc_info()
+        traceback.print_exc()
+        pdb.post_mortem(tb)
