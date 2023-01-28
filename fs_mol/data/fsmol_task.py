@@ -7,6 +7,10 @@ from dpu_utils.utils import RichPath
 from rdkit import Chem, DataStructs
 from rdkit.Chem import rdFingerprintGenerator, Descriptors
 from torch_geometric.data import Data
+from ogb.utils.mol import smiles2graph
+from fs_mol.custom.graphormer_utils import preprocess_item
+import torch
+from torch_geometric.data import Data
 
 def get_task_name_from_path(path: RichPath) -> str:
     # Use filename as task name:
@@ -35,6 +39,16 @@ class GraphData:
 class PyG_MoleculeDatapoint:
     task_name: str
     graph: Data # This includes the label as well in the `y` property
+    
+# @dataclass(frozen=True)
+# class GraphormerMoleculeDatapoint:
+#     task_name: str
+#     smiles: str
+#     graph: GraphormerGraph
+#     numeric_label: float
+#     bool_label: bool
+#     fingerprint: Optional[np.ndarray]
+#     descriptors: Optional[np.ndarray]
 
 @dataclass(frozen=True)
 class MoleculeDatapoint:
@@ -84,6 +98,92 @@ class MoleculeDatapoint:
                 descriptors.append(descr_calc_fn(mol))
             return np.array(descriptors)
 
+# @dataclass(frozen=True)
+# class GraphormerTask:
+#     name: str
+#     samples: List[GraphormerMoleculeDatapoint]
+    
+#     def get_pos_neg_separated(self) -> Tuple[List[GraphormerMoleculeDatapoint], List[GraphormerMoleculeDatapoint]]:
+#         pos_samples, neg_samples = partition(pred=lambda s: s.bool_label, iterable=self.samples)
+#         return list(pos_samples), list(neg_samples)
+
+#     @staticmethod
+#     def load_from_file(path: RichPath) -> "GraphormerTask":
+#         samples = []
+#         for raw_sample in path.read_by_file_suffix():
+#             graph_data = raw_sample.get("graph")
+#             smiles = raw_sample["SMILES"]
+
+#             fingerprint_raw = raw_sample.get("fingerprints")
+#             if fingerprint_raw is not None:
+#                 fingerprint: Optional[np.ndarray] = np.array(fingerprint_raw, dtype=np.int32)
+#             else:
+#                 fingerprint = None
+
+#             descriptors_raw = raw_sample.get("descriptors")
+#             if descriptors_raw is not None:
+#                 descriptors: Optional[np.ndarray] = np.array(descriptors_raw, dtype=np.float32)
+#             else:
+#                 descriptors = None
+                
+#             raw_graph = smiles2graph(smiles)
+            
+#             graphormer_graph = preprocess_item(raw_graph)
+
+#             samples.append(
+#                 MoleculeDatapoint(
+#                     task_name=get_task_name_from_path(path),
+#                     smiles=raw_sample["SMILES"],
+#                     bool_label=bool(float(raw_sample["Property"])),
+#                     numeric_label=float(raw_sample.get("RegressionProperty") or "nan"),
+#                     fingerprint=fingerprint,
+#                     descriptors=descriptors,
+#                     graph=graphormer_graph,
+#                 )
+#             )
+
+def generate_adjacency_lists(graph_data_adjLists):
+    adjacency_lists = []
+    for adj_list in graph_data_adjLists:
+        if len(adj_list) > 0:
+            adjacency_lists.append(np.array(adj_list, dtype=np.int64))
+        else:
+            adjacency_lists.append(np.zeros(shape=(0, 2), dtype=np.int64))
+    return adjacency_lists
+
+def legacy_graph_parser(graph_data):
+    adjacency_lists = generate_adjacency_lists(graph_data["adjacency_lists"])
+            
+    return GraphData(
+                    node_features=np.array(graph_data["node_features"], dtype=np.float32),
+                    adjacency_lists=adjacency_lists,
+                    edge_features=[
+                        np.array(edge_feats, dtype=np.float32)
+                        for edge_feats in graph_data.get("edge_features") or []
+                    ],
+                )
+    
+    
+def pyg_graph_parser(graph_data):
+    adjacency_lists = generate_adjacency_lists(graph_data["adjacency_lists"])
+    
+    x = np.array(graph_data["node_features"], dtype=np.float32)
+    
+    edge_attr = [np.array(edge_feats, dtype=np.float32) for edge_feats in graph_data.get("edge_features") or [] ]
+    
+    edge_index = torch.cat(list(map(torch.tensor, adjacency_lists)), dim=0).t().contiguous()
+    
+    return Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
+
+
+def parse_graph(graph_data, output_type = 'legacy'):
+    if output_type == 'legacy':
+        return legacy_graph_parser(graph_data)
+    elif output_type == 'pyg':
+        return pyg_graph_parser(graph_data)
+    elif output_type == 'sa_attn':
+        pyg_graph = pyg_graph_parser(graph_data)
+    
 
 @dataclass(frozen=True)
 class FSMolTask:
@@ -102,11 +202,9 @@ class FSMolTask:
         return list(pos_samples), list(neg_samples)
 
     @staticmethod
-    def load_from_file(path: RichPath) -> "FSMolTask":
+    def load_from_file(path: RichPath, output_type = 'legacy') -> "FSMolTask":
         samples = []
         for raw_sample in path.read_by_file_suffix():
-            graph_data = raw_sample.get("graph")
-
             fingerprint_raw = raw_sample.get("fingerprints")
             if fingerprint_raw is not None:
                 fingerprint: Optional[np.ndarray] = np.array(fingerprint_raw, dtype=np.int32)
@@ -118,14 +216,8 @@ class FSMolTask:
                 descriptors: Optional[np.ndarray] = np.array(descriptors_raw, dtype=np.float32)
             else:
                 descriptors = None
-
-            adjacency_lists = []
-            for adj_list in graph_data["adjacency_lists"]:
-                if len(adj_list) > 0:
-                    adjacency_lists.append(np.array(adj_list, dtype=np.int64))
-                else:
-                    adjacency_lists.append(np.zeros(shape=(0, 2), dtype=np.int64))
-
+            
+            graph_data = raw_sample.get("graph")
             samples.append(
                 MoleculeDatapoint(
                     task_name=get_task_name_from_path(path),
@@ -134,14 +226,7 @@ class FSMolTask:
                     numeric_label=float(raw_sample.get("RegressionProperty") or "nan"),
                     fingerprint=fingerprint,
                     descriptors=descriptors,
-                    graph=GraphData(
-                        node_features=np.array(graph_data["node_features"], dtype=np.float32),
-                        adjacency_lists=adjacency_lists,
-                        edge_features=[
-                            np.array(edge_feats, dtype=np.float32)
-                            for edge_feats in graph_data.get("edge_features") or []
-                        ],
-                    ),
+                    graph=parse_graph(graph_data, output_type),
                 )
             )
 
