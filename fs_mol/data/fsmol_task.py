@@ -12,6 +12,9 @@ from fs_mol.custom.graphormer_utils import preprocess_item
 import torch
 from torch_geometric.data import Data
 
+from fs_mol.custom.utils import convert_to_pyg_graph
+from .s_attn import add_subgraph_info
+
 def get_task_name_from_path(path: RichPath) -> str:
     # Use filename as task name:
     name = path.basename()
@@ -142,6 +145,13 @@ class MoleculeDatapoint:
 #                 )
 #             )
 
+def convert_adjacency_list_to_edge_feats(adjacency_lists):
+    single_bonds = adjacency_lists[0]
+    double_bonds = adjacency_lists[1]
+    triple_bonds =  adjacency_lists[2]
+
+    return [0 for bond in single_bonds] + [1 for bond in double_bonds] + [2 for bond in triple_bonds]
+
 def generate_adjacency_lists(graph_data_adjLists):
     adjacency_lists = []
     for adj_list in graph_data_adjLists:
@@ -165,15 +175,17 @@ def legacy_graph_parser(graph_data):
     
     
 def pyg_graph_parser(graph_data):
-    adjacency_lists = generate_adjacency_lists(graph_data["adjacency_lists"])
+    # adjacency_lists = generate_adjacency_lists(graph_data["adjacency_lists"])
     
-    x = np.array(graph_data["node_features"], dtype=np.float32)
+    # x = np.array(graph_data["node_features"], dtype=np.float32)
     
-    edge_attr = [np.array(edge_feats, dtype=np.float32) for edge_feats in graph_data.get("edge_features") or [] ]
+    # edge_attr = convert_adjacency_list_to_edge_feats(adjacency_lists)
     
-    edge_index = torch.cat(list(map(torch.tensor, adjacency_lists)), dim=0).t().contiguous()
+    # edge_index = torch.cat(list(map(torch.tensor, adjacency_lists)), dim=0).t().contiguous()
     
-    return Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
+    # return Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
+    
+    return convert_to_pyg_graph(legacy_graph_parser(graph_data))
 
 
 def parse_graph(graph_data, output_type = 'legacy'):
@@ -181,8 +193,9 @@ def parse_graph(graph_data, output_type = 'legacy'):
         return legacy_graph_parser(graph_data)
     elif output_type == 'pyg':
         return pyg_graph_parser(graph_data)
-    elif output_type == 'sa_attn':
+    elif output_type == 's_attn':
         pyg_graph = pyg_graph_parser(graph_data)
+        return add_subgraph_info(pyg_graph, 4)
     
 
 @dataclass(frozen=True)
