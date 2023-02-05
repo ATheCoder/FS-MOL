@@ -95,19 +95,21 @@ class FSMolDataset:
             if task_list is None:
                 return fold_dir.get_filtered_files_in_dir("*.jsonl.gz")
             else:
-                return [
-                    file_name
-                    for file_name in fold_dir.get_filtered_files_in_dir("*.jsonl.gz")
-                    if any(
-                        file_name.basename() == f"{task_name}.jsonl.gz"
-                        for task_name in task_list[data_fold_name]
-                    )
-                ]
+                file_names = [file_name for file_name in fold_dir.get_filtered_files_in_dir("*.jsonl.gz")]
+                valid_tasks = [f"{task_name}.jsonl.gz" for task_name in task_list[data_fold_name]]
+                filtered_files = list(filter(lambda x: x.basename() in valid_tasks, file_names))
+                
+                return filtered_files
+                
+        train_data_paths = get_fold_file_names("train")
+        valid_data_paths=sorted(get_fold_file_names("valid"))
+        test_data_paths=sorted(get_fold_file_names("test"))
+        
 
         return FSMolDataset(
-            train_data_paths=get_fold_file_names("train"),
-            valid_data_paths=sorted(get_fold_file_names("valid")),
-            test_data_paths=sorted(get_fold_file_names("test")),
+            train_data_paths=train_data_paths,
+            valid_data_paths=valid_data_paths,
+            test_data_paths=test_data_paths,
             **kwargs,
         )
 
