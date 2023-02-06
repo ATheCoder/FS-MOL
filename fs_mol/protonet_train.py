@@ -6,11 +6,11 @@ import json
 import torch
 from pyprojroot import here as project_root
 import wandb
+
+sys.path.insert(0, str(project_root()))
 from fs_mol.utils.protonet.encoder_model_selector import make_proto_encoder_model
 
 from fs_mol.utils.wandb import make_trainer_config
-
-sys.path.insert(0, str(project_root()))
 
 from fs_mol.modules.graph_feature_extractor import (
     add_graph_feature_extractor_arguments,
