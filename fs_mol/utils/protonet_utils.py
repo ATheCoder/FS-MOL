@@ -391,7 +391,6 @@ class PrototypicalNetworkTrainer(nn.Module):
 
     def train_loop(self, out_dir: str, dataset: FSMolDataset, device: torch.device, aml_run=None):
         self.save_model(os.path.join(out_dir, "best_validation.pt"))
-        wandb.watch(self, log='all')
 
         train_task_sample_iterator = iter(
             get_protonet_task_sample_iterable(
