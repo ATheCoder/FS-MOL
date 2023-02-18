@@ -1,9 +1,7 @@
 import torch
 from torch_geometric.data import Data
 
-from fs_mol.data.fsmol_task import MoleculeDatapoint
-
-def convert_to_pyg_graph(sample: MoleculeDatapoint, device=None):
+def convert_to_pyg_graph(sample, device=None):
     graph = sample.graph
     y = 1 if sample.bool_label else 0
 
