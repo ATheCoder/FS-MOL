@@ -28,7 +28,7 @@ class CrossAttention(nn.Module):
 
 
 class CrossAttentionBlock(nn.Module):
-    def __init__(self, feat1_dim, feat2_dim, d_k, d_v, d_ff, attn_drop = 0., n_heads = 1) -> None:
+    def __init__(self, feat1_dim, feat2_dim, d_k, d_v, d_ff, attn_drop = 0.2, n_heads = 1) -> None:
         super().__init__()
         
         print('DK:', d_k)
@@ -49,7 +49,9 @@ class CrossAttentionBlock(nn.Module):
         self.fused_embedding_normalizer = nn.LayerNorm(feat1_dim)
         
         # Fused embedding FFN
-        self.fused_norm_FFN = nn.Sequential(nn.Linear(feat1_dim, d_ff), nn.ReLU(), nn.Linear(d_ff, feat1_dim))
+        self.fused_norm_FFN = nn.Sequential(nn.Linear(feat1_dim, d_ff), nn.GELU(), nn.Linear(d_ff, feat1_dim))
+        
+        self.FFN_dropout = nn.Dropout(0.2)
     
     def forward(self, feat1, feat2):
         feat1_norm = self.feat1_normalizer(feat1)
@@ -66,10 +68,12 @@ class CrossAttentionBlock(nn.Module):
         
         fused_embedding_norm = self.fused_norm_FFN(fused_embedding_norm)
         
+        fused_embedding_norm = self.FFN_dropout(fused_embedding_norm)
+        
         return fused_embedding + fused_embedding_norm
 
 class BidirectionalAttention(nn.Module):
-    def __init__(self, graph_embedding_dim, mol_descs_dim, n_heads = 8, d_ff = 10240, output_dim = 512):
+    def __init__(self, graph_embedding_dim, mol_descs_dim, n_heads = 8, d_ff = 3072, output_dim = 768):
         super().__init__()
         
         d_k_graph_to_desc = d_v_graph_to_desc = graph_embedding_dim // n_heads
@@ -80,7 +84,7 @@ class BidirectionalAttention(nn.Module):
         
         self.aggr_proj = nn.Sequential(
             nn.Linear(graph_embedding_dim + mol_descs_dim, 1024),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Linear(1024, output_dim),
         )
         
