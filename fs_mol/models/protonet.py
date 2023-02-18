@@ -151,7 +151,7 @@ class PyG_PrototypicalNetwork(nn.Module):
 @dataclass(frozen=True)
 class AttentionBasedEncoderConfig(PrototypicalNetworkConfig):
     n_heads: int = 8
-    d_ff: int = 10240
+    d_ff: int = 3072
     attn_output_dim: int = 512
     
     
