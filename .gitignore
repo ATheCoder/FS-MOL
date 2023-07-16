@@ -10,6 +10,10 @@
 *.userosscache
 *.sln.docstates
 
+experiment_results
+data
+
+mol-clr
 env
 saved_trains
 
