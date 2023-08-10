@@ -1,6 +1,6 @@
 ## Install the dependencies
 
-`pip install torch_geometric lightning dpu_utils more_itertools rdkit py-repo-root omegaconf torch_sparse torch_scatter wandb torch_cluster`
+`pip install torch_geometric lightning dpu_utils more_itertools rdkit py-repo-root omegaconf torch_sparse torch_scatter wandb torch_cluster nglview`
 
 ## Notebooks
 
