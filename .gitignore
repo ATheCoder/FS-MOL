@@ -373,3 +373,5 @@ results
 .env
 Notes.md
 datasets/*
+
+lightning_logs
