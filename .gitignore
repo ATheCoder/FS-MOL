@@ -16,6 +16,8 @@ data
 mol-clr
 env
 saved_trains
+checkpoints
+tune_storage
 
 datasets/fs-mol
 
