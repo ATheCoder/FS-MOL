@@ -1,13 +1,14 @@
 import numpy as np
-from torch import nn
+from torch import Tensor, nn
 from torch_geometric.nn.aggr.utils import (
     PoolingByMultiheadAttention,
     SetAttentionBlock,
 )
 import torch
+from MHNfs.mhnfs.modules import similarity_module
 
 from fs_mol.models.protonet import calculate_mahalanobis_logits
-from utils.batch import batch_2d_tensor, separate_qsl
+from utils.batch import batch_2d_tensor, separate_qs, separate_qsl
 
 
 class SetTransformerSimilarityModule(nn.Module):
@@ -50,8 +51,12 @@ class SetTransformerSimilarityModule(nn.Module):
 class CNAPSProtoNetSimilarityModule(nn.Module):
     def __init__(self, init_prediction_scaling) -> None:
         super().__init__()
-
-        self.prediction_scaling = nn.Parameter(torch.ones([]) * np.log(1 / init_prediction_scaling))
+        if init_prediction_scaling != None:
+            self.prediction_scaling = nn.Parameter(
+                torch.ones([]) * np.log(1 / init_prediction_scaling)
+            )
+        else:
+            self.prediction_scaling = None
 
     def calc_label_cov(self, task_cov, label_cov):
         """
@@ -183,7 +188,7 @@ class CNAPSProtoNetSimilarityModule(nn.Module):
             batch_query_graphs,
             batch_query_labels,
             query_graph_lengths,
-        ) = separate_qsl(graph_reprs, labels, is_query, batch_index)
+        ) = separate_qs(graph_reprs, labels, is_query, batch_index)
         # Get divide support and query sets.
         logits = self.batch_calculate_mahalanobis_logits(
             batch_support_graphs,
@@ -193,7 +198,10 @@ class CNAPSProtoNetSimilarityModule(nn.Module):
             query_graph_lengths,
         )
 
-        logit_scale = self.prediction_scaling.exp()
+        if self.prediction_scaling != None:
+            logit_scale = self.prediction_scaling.exp()
+        else:
+            logit_scale = 1.0
 
         return logits * logit_scale
 
@@ -212,7 +220,7 @@ class SingleBatch_CNAPSProtoNetSimilarityModule(nn.Module):
             batch_query_graphs,
             batch_query_labels,
             query_graph_lengths,
-        ) = separate_qsl(graph_reprs, labels, is_query, batch_index)
+        ) = separate_qs(graph_reprs, labels, is_query, batch_index)
 
         assert len(batch_support_graphs) == 1
         assert len(batch_support_labels) == 1
@@ -224,5 +232,54 @@ class SingleBatch_CNAPSProtoNetSimilarityModule(nn.Module):
             batch_query_graphs[0],
             batch_support_graphs.device,
         )
+
+        return logits
+
+
+class CosineWeightedMeanSimilarity(nn.Module):
+    def __init__(self, init_logit_scale, should_norm=True) -> None:
+        super().__init__()
+        self.should_norm = should_norm
+        self.prediction_scaling: Tensor
+        self.register_parameter(
+            "prediction_scaling",
+            nn.Parameter(torch.ones([]) * np.log(1 / init_logit_scale)),
+        )
+
+    def norm_tensor(self, tensor):
+        norms = tensor.norm(dim=-1, keepdim=True)
+        mask = norms > 0
+        return tensor * mask / (norms + ~mask)
+
+    def forward(self, graph_reprs, labels, is_query, batch_index):
+        (
+            support_neg,
+            support_neg_sizes,
+            support_pos,
+            support_pos_sizes,
+            query_graphs,
+            query_labels,
+        ) = separate_qsl(graph_reprs, labels, is_query, batch_index)
+
+        if self.should_norm:
+            support_pos = self.norm_tensor(support_pos)
+            support_neg = self.norm_tensor(support_neg)
+
+        assert query_graphs.shape[0] == support_pos.shape[0]
+        assert query_graphs.shape[0] == support_neg.shape[0]
+        pos_vote = similarity_module(
+            query_graphs,
+            support_pos,
+            support_pos_sizes,
+        )
+        neg_vote = similarity_module(
+            query_graphs,
+            support_neg,
+            support_neg_sizes,
+        )
+
+        logit_scale = self.prediction_scaling.exp()
+
+        logits = (pos_vote - neg_vote) * logit_scale
 
         return logits
