@@ -25,7 +25,47 @@ def batch_variable_length(list_of_sequences: List[Tensor]):
     return batch, lengths
 
 
+def get_support_with_label(graph_reprs, labels, is_query, batch_index, label):
+    mask = (is_query == 0) & (labels == label)
+
+    support_positive_graphs = graph_reprs[mask]
+    support_positive_batch_index = batch_index[mask]
+    support_positive_graphs = unbatch(support_positive_graphs, support_positive_batch_index)
+    support_positive_lenghts = torch.tensor(
+        [g.shape[0] for g in support_positive_graphs], dtype=torch.long, device=labels.device
+    )
+    support_positive_graphs = pad_sequence(support_positive_graphs, batch_first=True)
+
+    return support_positive_graphs, support_positive_lenghts
+
+
 def separate_qsl(graph_reprs, labels, is_query, batch_index):
+    # Support Vectors Positive, Support Labels
+    support_negative_graphs, support_negative_lengths = get_support_with_label(
+        graph_reprs, labels, is_query, batch_index, 0
+    )
+    support_positive_graphs, support_positive_lengths = get_support_with_label(
+        graph_reprs, labels, is_query, batch_index, 1
+    )
+    # Query Vectors, Query Labels
+    query_graphs = graph_reprs[is_query == 1]
+    query_labels = labels[is_query == 1]
+    query_batch_index = batch_index[is_query == 1]
+
+    query_graphs = torch.stack(unbatch(query_graphs, query_batch_index), dim=0)
+    query_labels = torch.stack(unbatch(query_labels, query_batch_index), dim=0)
+
+    return (
+        support_negative_graphs,
+        support_negative_lengths,
+        support_positive_graphs,
+        support_positive_lengths,
+        query_graphs,
+        query_labels,
+    )
+
+
+def separate_qs(graph_reprs, labels, is_query, batch_index):
     # Support Vectors Positive, Support Labels
     bool_is_query = is_query.bool()
 
