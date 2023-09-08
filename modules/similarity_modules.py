@@ -1,12 +1,13 @@
-from typing import List
-from torch import Tensor, nn
+import numpy as np
+from torch import nn
 from torch_geometric.nn.aggr.utils import (
     PoolingByMultiheadAttention,
     SetAttentionBlock,
 )
 import torch
-from torch.nn.utils.rnn import pad_sequence
-from torch_geometric.utils import unbatch
+
+from fs_mol.models.protonet import calculate_mahalanobis_logits
+from utils.batch import batch_2d_tensor, separate_qsl
 
 
 class SetTransformerSimilarityModule(nn.Module):
@@ -46,63 +47,11 @@ class SetTransformerSimilarityModule(nn.Module):
         return logits
 
 
-def generate_batch_index(lengths: Tensor):
-    return torch.repeat_interleave(torch.arange(len(lengths), device=lengths.device), lengths)
-
-
-def generate_mask(lengths: Tensor):
-    max_len = lengths.max()
-
-    mask = torch.arange(max_len.item(), device=lengths.device).unsqueeze(0)
-    return mask < lengths.unsqueeze(1)
-
-
-def batch_variable_length(list_of_sequences: List[Tensor]):
-    batch = pad_sequence(list_of_sequences, True)
-    lengths = torch.tensor(
-        [t.shape[0] for t in list_of_sequences], device=list_of_sequences[0].device
-    )
-
-    return batch, lengths
-
-
-def separate_qsl(graph_reprs, labels, is_query, batch_index):
-    # Support Vectors Positive, Support Labels
-    bool_is_query = is_query.bool()
-
-    support_graphs = graph_reprs[~bool_is_query]
-    support_labels = labels[~bool_is_query]
-    support_batch_index = batch_index[~bool_is_query]
-
-    support_graphs = unbatch(support_graphs, support_batch_index)
-    support_labels = unbatch(support_labels, support_batch_index)
-    batch_support_graphs, support_graph_lengths = batch_variable_length(support_graphs)
-    batch_support_labels, _ = batch_variable_length(support_labels)
-
-    # Query Vectors, Query Labels
-    query_graphs = graph_reprs[bool_is_query]
-    query_labels = labels[bool_is_query]
-    query_batch_index = batch_index[bool_is_query]
-
-    query_graphs = unbatch(query_graphs, query_batch_index)
-    query_labels = unbatch(query_labels, query_batch_index)
-
-    batch_query_graphs, query_graph_lengths = batch_variable_length(query_graphs)
-    batch_query_labels, _ = batch_variable_length(query_labels)
-
-    return (
-        batch_support_graphs,
-        batch_support_labels,
-        support_graph_lengths,
-        batch_query_graphs,
-        batch_query_labels,
-        query_graph_lengths,
-    )
-
-
 class CNAPSProtoNetSimilarityModule(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, init_prediction_scaling) -> None:
         super().__init__()
+
+        self.prediction_scaling = nn.Parameter(torch.ones([]) * np.log(1 / init_prediction_scaling))
 
     def calc_label_cov(self, task_cov, label_cov):
         """
@@ -118,17 +67,6 @@ class CNAPSProtoNetSimilarityModule(nn.Module):
             + ((1 - lambda_k_tau) * task_cov)
             + 0.1 * torch.eye(task_cov.shape[-1], task_cov.shape[-1], device=task_cov.device)
         )
-
-    def batch_2d_tensor(self, tensor: Tensor, lengths: Tensor):
-        """
-        Converts a 2D Tensor representing a collection of vectors to a padded 3D Tensor representing batched collection of vectors.
-        Parameters:
-        tensor -- The 2D tensor.
-        lengths -- The a list representing the number of vectors on each batch
-        """
-        list_of_sequences = torch.split(tensor, lengths.tolist())
-        res, lens = batch_variable_length(list(list_of_sequences))
-        return res
 
     def batch_calculate_mahalanobis_logits(
         self, support_set, support_labels, query_set, support_set_lengths, query_set_lengths
@@ -161,8 +99,6 @@ class CNAPSProtoNetSimilarityModule(nn.Module):
         positive_mean = (support_set * mask_positive).sum(dim=1) / mask_positive.sum(dim=1)
         negative_mean = (support_set * mask_negative).sum(dim=1) / mask_negative.sum(dim=1)
 
-        # task_covariance_estimate = _estimate_cov(support_set, support_set_lengths)
-
         # Step 2: Compute covariance matrices for each batch
         cov_mats = self._torch_cov(support_set, support_set_lengths)
         # cov_mats_inv = torch.linalg.inv(cov_mats)
@@ -170,12 +106,12 @@ class CNAPSProtoNetSimilarityModule(nn.Module):
         neg_counts = mask_negative.sum(dim=[1, 2])
 
         pos_mats = self._torch_cov(
-            self.batch_2d_tensor(support_set[mask_positive.squeeze(-1).bool()], pos_counts.long()),
+            batch_2d_tensor(support_set[mask_positive.squeeze(-1).bool()], pos_counts.long()),
             pos_counts,
         )
 
         neg_mats = self._torch_cov(
-            self.batch_2d_tensor(support_set[mask_negative.squeeze(-1).bool()], neg_counts.long()),
+            batch_2d_tensor(support_set[mask_negative.squeeze(-1).bool()], neg_counts.long()),
             mask_negative.sum(dim=[1, 2]),
         )
 
@@ -255,6 +191,38 @@ class CNAPSProtoNetSimilarityModule(nn.Module):
             batch_query_graphs,
             support_graph_lengths,
             query_graph_lengths,
+        )
+
+        logit_scale = self.prediction_scaling.exp()
+
+        return logits * logit_scale
+
+
+class SingleBatch_CNAPSProtoNetSimilarityModule(nn.Module):
+    def __init__(
+        self,
+    ) -> None:
+        super().__init__()
+
+    def forward(self, graph_reprs, labels, is_query, batch_index):
+        (
+            batch_support_graphs,
+            batch_support_labels,
+            support_graph_lengths,
+            batch_query_graphs,
+            batch_query_labels,
+            query_graph_lengths,
+        ) = separate_qsl(graph_reprs, labels, is_query, batch_index)
+
+        assert len(batch_support_graphs) == 1
+        assert len(batch_support_labels) == 1
+        assert len(batch_query_graphs) == 1
+
+        logits = calculate_mahalanobis_logits(
+            batch_support_graphs[0],
+            batch_support_labels[0],
+            batch_query_graphs[0],
+            batch_support_graphs.device,
         )
 
         return logits
