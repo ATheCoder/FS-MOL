@@ -233,7 +233,7 @@ class SingleBatch_CNAPSProtoNetSimilarityModule(nn.Module):
             batch_support_graphs.device,
         )
 
-        return logits
+        return logits.unsqueeze(0)
 
 
 class CosineWeightedMeanSimilarity(nn.Module):
