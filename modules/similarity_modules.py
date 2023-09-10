@@ -1,4 +1,5 @@
 import numpy as np
+from sklearn.metrics import auc, precision_recall_curve
 from torch import Tensor, nn
 from torch_geometric.nn.aggr.utils import (
     PoolingByMultiheadAttention,
@@ -9,6 +10,8 @@ from MHNfs.mhnfs.modules import similarity_module
 
 from fs_mol.models.protonet import calculate_mahalanobis_logits
 from utils.batch import batch_2d_tensor, separate_qs, separate_qsl
+
+from torch.nn import functional as F
 
 
 class SetTransformerSimilarityModule(nn.Module):
@@ -130,11 +133,12 @@ class CNAPSProtoNetSimilarityModule(nn.Module):
         )
         query_mask = query_mask.unsqueeze(-1).float()
 
-        pos_diff = query_set - positive_mean[:, None, :]
-        neg_diff = query_set - negative_mean[:, None, :]
-
-        pos_maha = torch.einsum("bik,bkx,bij->bi", pos_diff, pos_mats_inv, pos_diff)
-        neg_maha = torch.einsum("bik,bkx,bij->bi", neg_diff, neg_mats_inv, neg_diff)
+        pos_diff = positive_mean[:, None, :] - query_set
+        neg_diff = negative_mean[:, None, :] - query_set
+        pos_maha = torch.einsum("bik,bkx,bix->bi", pos_diff, pos_mats_inv, pos_diff)
+        neg_maha = torch.einsum("bik,bkx,bix->bi", neg_diff, neg_mats_inv, neg_diff)
+        # pos_maha = torch.einsum("bik,bkx,bij->bi", pos_diff, pos_mats_inv, pos_diff)
+        # neg_maha = torch.einsum("bik,bkx,bij->bi", neg_diff, neg_mats_inv, neg_diff)
 
         pos_maha *= query_mask.squeeze(-1)
         neg_maha *= query_mask.squeeze(-1)
@@ -142,7 +146,7 @@ class CNAPSProtoNetSimilarityModule(nn.Module):
         # pos_maha = torch.sqrt(pos_maha)
         # neg_maha = torch.sqrt(neg_maha)
 
-        return torch.stack([neg_maha, pos_maha], dim=-1)
+        return torch.stack([neg_maha, pos_maha], dim=-1) * -1
 
     def _torch_cov(self, tensor, lengths):
         """
@@ -171,6 +175,28 @@ class CNAPSProtoNetSimilarityModule(nn.Module):
         cov_matrix /= lengths[:, None, None] - 1
 
         return cov_matrix
+
+    def calc_loss_from_logits(self, logits, query_labels):
+        assert logits.shape[0] == query_labels.shape[0]
+        loss = F.cross_entropy(logits[0], query_labels[0])
+        for i in range(1, logits.shape[0]):
+            loss += F.cross_entropy(logits[i], query_labels[i])
+
+        return loss / logits.shape[0]
+
+    def calculate_delta_auc_pr(self, batch_logits, batch_targets):
+        predictions = F.softmax(batch_logits.reshape(-1, 2), dim=-1)[:, 1]
+        targets = batch_targets.reshape(-1)
+        precision, recall, _ = precision_recall_curve(
+            targets.detach().cpu().numpy(), predictions.detach().cpu().numpy()
+        )
+
+        auc_score = auc(recall, precision)
+
+        random_classifier_auc_pr = np.mean(targets.detach().cpu().numpy())
+        res = auc_score - random_classifier_auc_pr
+
+        return res
 
     def forward(self, graph_reprs, labels, is_query, batch_index):
         """
@@ -235,6 +261,28 @@ class SingleBatch_CNAPSProtoNetSimilarityModule(nn.Module):
 
         return logits.unsqueeze(0)
 
+    def calculate_delta_auc_pr(self, batch_logits, batch_targets):
+        predictions = F.softmax(batch_logits.reshape(-1, 2), dim=-1)[:, 1]
+        targets = batch_targets.reshape(-1)
+        precision, recall, _ = precision_recall_curve(
+            targets.detach().cpu().numpy(), predictions.detach().cpu().numpy()
+        )
+
+        auc_score = auc(recall, precision)
+
+        random_classifier_auc_pr = np.mean(targets.detach().cpu().numpy())
+        res = auc_score - random_classifier_auc_pr
+
+        return res
+
+    def calc_loss_from_logits(self, logits, query_labels):
+        assert logits.shape[0] == query_labels.shape[0]
+        loss = F.cross_entropy(logits[0], query_labels[0])
+        for i in range(1, logits.shape[0]):
+            loss += F.cross_entropy(logits[i], query_labels[i])
+
+        return loss / logits.shape[0]
+
 
 class CosineWeightedMeanSimilarity(nn.Module):
     def __init__(self, init_logit_scale, should_norm=True) -> None:
@@ -250,6 +298,24 @@ class CosineWeightedMeanSimilarity(nn.Module):
         norms = tensor.norm(dim=-1, keepdim=True)
         mask = norms > 0
         return tensor * mask / (norms + ~mask)
+
+    def calculate_delta_auc_pr(self, batch_logits, batch_targets):
+        predictions = F.sigmoid(batch_logits).reshape(-1)
+        targets = batch_targets.reshape(-1)
+        precision, recall, _ = precision_recall_curve(
+            targets.detach().cpu().numpy(), predictions.detach().cpu().numpy()
+        )
+
+        auc_score = auc(recall, precision)
+
+        random_classifier_auc_pr = np.mean(targets.detach().cpu().numpy())
+        res = auc_score - random_classifier_auc_pr
+
+        return res
+
+    def calc_loss_from_logits(self, logits, query_labels):
+        assert logits.shape[0] == query_labels.shape[0]
+        return F.cross_entropy(logits, query_labels.float())
 
     def forward(self, graph_reprs, labels, is_query, batch_index):
         (
