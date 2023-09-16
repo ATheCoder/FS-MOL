@@ -25,12 +25,6 @@ def init_wandb(config, model, checkpoint_path):
 
 
 def train_lightning_module(module, config, data_module, check_point_path=None, wandb_enabled=True):
-    # model = (
-    #     module.load_from_checkpoint(check_point_path, config=config, data_module=data_module)
-    #     if check_point_path is not None
-    #     else module(config, data_module)
-    # )
-
     model = module(config, data_module)
 
     if wandb_enabled:
