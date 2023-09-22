@@ -1,3 +1,5 @@
+from abc import ABC, abstractmethod
+from typing import Any
 import numpy as np
 from sklearn.metrics import auc, precision_recall_curve
 from torch import Tensor, nn
@@ -12,6 +14,23 @@ from fs_mol.models.protonet import calculate_mahalanobis_logits
 from utils.batch import batch_2d_tensor, separate_qs, separate_qsl
 
 from torch.nn import functional as F
+
+
+class SimilarityModule(ABC, nn.Module):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+
+    @abstractmethod
+    def calculate_delta_auc_pr(self, batch_logits, batch_targets) -> Any:
+        pass
+
+    @abstractmethod
+    def get_probabilities_from_logits(self, logits) -> Tensor:
+        pass
+
+    @abstractmethod
+    def calc_loss_from_logits(self, logits, query_labels) -> Tensor:
+        pass
 
 
 class SetTransformerSimilarityModule(nn.Module):
@@ -51,12 +70,14 @@ class SetTransformerSimilarityModule(nn.Module):
         return logits
 
 
-class CNAPSProtoNetSimilarityModule(nn.Module):
+class CNAPSProtoNetSimilarityModule(SimilarityModule):
     def __init__(self, init_prediction_scaling) -> None:
         super().__init__()
         if init_prediction_scaling != None:
-            self.prediction_scaling = nn.Parameter(
-                torch.ones([]) * np.log(1 / init_prediction_scaling)
+            self.prediction_scaling: Tensor | None
+            self.register_parameter(
+                "prediction_scaling",
+                nn.Parameter(torch.ones([]) * np.log(1 / init_prediction_scaling)),
             )
         else:
             self.prediction_scaling = None
@@ -75,6 +96,9 @@ class CNAPSProtoNetSimilarityModule(nn.Module):
             + ((1 - lambda_k_tau) * task_cov)
             + 0.1 * torch.eye(task_cov.shape[-1], task_cov.shape[-1], device=task_cov.device)
         )
+
+    def get_probabilities_from_logits(self, logits):
+        return F.softmax(logits.reshape(-1, 2), dim=-1)[:, 1]
 
     def batch_calculate_mahalanobis_logits(
         self, support_set, support_labels, query_set, support_set_lengths, query_set_lengths
@@ -146,7 +170,9 @@ class CNAPSProtoNetSimilarityModule(nn.Module):
         # pos_maha = torch.sqrt(pos_maha)
         # neg_maha = torch.sqrt(neg_maha)
 
-        return torch.stack([neg_maha, pos_maha], dim=-1) * -1
+        logit_scale = 1 if self.prediction_scaling == None else self.prediction_scaling.exp()
+
+        return torch.stack([neg_maha, pos_maha], dim=-1) * -1 * logit_scale
 
     def _torch_cov(self, tensor, lengths):
         """
@@ -177,15 +203,10 @@ class CNAPSProtoNetSimilarityModule(nn.Module):
         return cov_matrix
 
     def calc_loss_from_logits(self, logits, query_labels):
-        assert logits.shape[0] == query_labels.shape[0]
-        loss = F.cross_entropy(logits[0], query_labels[0])
-        for i in range(1, logits.shape[0]):
-            loss += F.cross_entropy(logits[i], query_labels[i])
-
-        return loss / logits.shape[0]
+        return F.cross_entropy(logits.reshape(-1, 2), query_labels.reshape(-1).long())
 
     def calculate_delta_auc_pr(self, batch_logits, batch_targets):
-        predictions = F.softmax(batch_logits.reshape(-1, 2), dim=-1)[:, 1]
+        predictions = self.get_probabilities_from_logits(batch_logits)
         targets = batch_targets.reshape(-1)
         precision, recall, _ = precision_recall_curve(
             targets.detach().cpu().numpy(), predictions.detach().cpu().numpy()
@@ -284,7 +305,7 @@ class SingleBatch_CNAPSProtoNetSimilarityModule(nn.Module):
         return loss / logits.shape[0]
 
 
-class CosineWeightedMeanSimilarity(nn.Module):
+class CosineWeightedMeanSimilarity(SimilarityModule):
     def __init__(self, init_logit_scale, should_norm=True) -> None:
         super().__init__()
         self.should_norm = should_norm
@@ -299,8 +320,11 @@ class CosineWeightedMeanSimilarity(nn.Module):
         mask = norms > 0
         return tensor * mask / (norms + ~mask)
 
+    def get_probabilities_from_logits(self, logits):
+        return F.sigmoid(logits).reshape(-1)
+
     def calculate_delta_auc_pr(self, batch_logits, batch_targets):
-        predictions = F.sigmoid(batch_logits).reshape(-1)
+        predictions = self.get_probabilities_from_logits(batch_logits)
         targets = batch_targets.reshape(-1)
         precision, recall, _ = precision_recall_curve(
             targets.detach().cpu().numpy(), predictions.detach().cpu().numpy()
@@ -315,7 +339,9 @@ class CosineWeightedMeanSimilarity(nn.Module):
 
     def calc_loss_from_logits(self, logits, query_labels):
         assert logits.shape[0] == query_labels.shape[0]
-        return F.cross_entropy(logits, query_labels.float())
+        return F.binary_cross_entropy_with_logits(
+            logits.reshape(-1), query_labels.reshape(-1).float()
+        )
 
     def forward(self, graph_reprs, labels, is_query, batch_index):
         (
