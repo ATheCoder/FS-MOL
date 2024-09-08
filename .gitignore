@@ -19,6 +19,8 @@ saved_trains
 checkpoints
 tune_storage
 
+MXM_exp_checkpoint/**
+
 datasets/fs-mol
 
 # User-specific files (MonoDevelop/Xamarin Studio)
