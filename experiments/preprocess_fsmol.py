@@ -150,12 +150,10 @@ def single_path_processor(path: Path, preprocessor_func, bar):
 raw_path = f'/FS-MOL/datasets/fs-mol/{fold}/'
 
 fsmol_root_dir = Path(f'/FS-MOL/datasets/fs-mol')
-fsmol_task_list = json.load(open('/FS-MOL/datasets/fsmol-0.1.json', 'r+b'))[fold]
+fsmol_task_list = json.load(open('/FS-MOL/datasets/fsmol-0.1.json', 'r+b'))[fold] # Original FSMOL tasks
 
-# fsmol_task_list = [t.name for t in pickle.load(open(f'/FS-MOL/datasets/fs-mol-mxm/{fold}_tasks.pkl', 'r+b'))]
 fsmol_task_paths = [ fsmol_root_dir / fold / f'{tn}.jsonl.gz' for tn in fsmol_task_list]
 
-# [single_path_processor(path, preprocess_smile) for path in tqdm(fsmol_task_paths)]
 remote_tqdm = ray.remote(tqdm_ray.tqdm)
 bar = remote_tqdm.remote(total=len(fsmol_task_paths))
 
@@ -164,6 +162,3 @@ tasks = [single_path_processor.remote(path, preprocess_smile, bar) for path in f
 ray.get(tasks)
 
 
-# new_tasks = ray.get([single_path_processor.remote(path, preprocess_smile) for path in fsmol_task_paths])
-
-# preprocess_smile(new_tasks[0].samples[0])
