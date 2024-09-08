@@ -20,6 +20,7 @@ checkpoints
 tune_storage
 
 MXM_exp_checkpoint/**
+pictures/**
 
 datasets/fs-mol
 
