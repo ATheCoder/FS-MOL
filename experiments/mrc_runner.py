@@ -157,8 +157,8 @@ class MRCLightningModule(L.LightningModule):
     def training_step(self, batches):
         loss, _, _, _ = self.calc_loss(batches)
         
-        self.log('train_step', loss, on_step=True, on_epoch=False, batch_size=1)
-        self.log('train_loss', loss, on_step=False, on_epoch=True, batch_size=1)
+        self.log('train_step', loss, on_step=True, on_epoch=False, batch_size=config.batch_size)
+        self.log('train_loss', loss, on_step=False, on_epoch=True, batch_size=config.batch_size)
         
         return loss
     
