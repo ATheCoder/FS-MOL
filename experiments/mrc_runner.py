@@ -216,11 +216,11 @@ checkpoint_callback = ModelCheckpoint(
     save_last=True
 )
 # train the model (hint: here are some helpful Trainer arguments for rapid idea iteration)
-cliplike = MRCLightningModule()
+model = MRCLightningModule()
 if config.isProd:
     wandb.init(project="molecular_representation_comparison", config=config)
 # trainer = L.Trainer(limit_train_batches=10,  check_val_every_n_epoch=1, max_epochs=5, logger=WandbLogger())
 # trainer = L.Trainer(callbacks=[checkpoint_callback], limit_train_batches=10,  check_val_every_n_epoch=1, max_epochs=5, logger=WandbLogger())
 # trainer = L.Trainer(callbacks=[checkpoint_callback], val_check_interval=0.5, check_val_every_n_epoch=1, logger=WandbLogger() if config.isProd else None, max_epochs=100, accumulate_grad_batches=config.accumulate_grad_batches)
 trainer = L.Trainer(callbacks=[checkpoint_callback], check_val_every_n_epoch=10, logger=WandbLogger() if config.isProd else None, max_epochs=10000, accumulate_grad_batches=config.accumulate_grad_batches)
-trainer.fit(model=cliplike, train_dataloaders=train_dl, val_dataloaders=valid_dls)
+trainer.fit(model=model, train_dataloaders=train_dl, val_dataloaders=valid_dls)
