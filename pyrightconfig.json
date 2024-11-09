@@ -1,0 +1,3 @@
+{
+    "exclude": ["**/checkpoints/*/**", "**/data/*/**", "**/lightning_logts/*/**", "**/tune_storage/*/**", "**/wandb/*/**"]
+}

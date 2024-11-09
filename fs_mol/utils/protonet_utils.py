@@ -4,6 +4,7 @@ import sys
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, Dict, List, Optional, Tuple
+from collections import Counter
 import wandb
 
 import numpy as np
@@ -391,7 +392,7 @@ class PrototypicalNetworkTrainer(nn.Module):
 
     def train_loop(self, out_dir: str, dataset: FSMolDataset, device: torch.device, aml_run=None):
         self.save_model(os.path.join(out_dir, "best_validation.pt"))
-
+        counter = Counter()
         train_task_sample_iterator = iter(
             get_protonet_task_sample_iterable(
                 dataset=dataset,
@@ -415,11 +416,14 @@ class PrototypicalNetworkTrainer(nn.Module):
             self.train(True)
             torch.set_grad_enabled(True)
             self.optimizer.zero_grad()
+            
 
             task_batch_losses: List[float] = []
             task_batch_metrics: List[BinaryEvalMetrics] = []
             for _ in range(self.config.tasks_per_batch):
                 task_sample = next(train_task_sample_iterator)
+                counter.update([task_sample.task_name])
+                wandb.log(dict(counter))
                 train_task_sample = torchify(task_sample, device=device)
                 task_loss, task_metrics = run_on_batches(
                     self,

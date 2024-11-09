@@ -9,47 +9,56 @@ class TrainConfig:
     epochs: int = 10
     batch_size: int = 32
     graph_encoder_num_layers: int = 5
-    graph_encoder_hidden_dim: int = 80
-    graph_encoder_out_dim: int = 256
+    graph_encoder_hidden_dim: int = 256
+    graph_encoder_out_dim: int = 512
+    
     graph_encoder_heads: int = 4
-    graph_encoder_edge_dim: int = 1
+    graph_encoder_edge_dim: int = 3
     graph_encoder_dropout: float = 0.1
     graph_encoder_mlp_hidden_dim: int = 512
     
     fingerprint_encoder_hidden_dim: int = 1024
-    fingerprint_encoder_output_dim: int = 512
     fingerprint_encoder_dropout: int = 0.1
+    
+    encoder_dims = [64, 128, 256, 512]
     
 
 class GAT_GraphEncoder(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.gnn = GAT(
-            32,
+            128,
             hidden_channels=config.graph_encoder_hidden_dim,
             num_layers=config.graph_encoder_num_layers,
             out_channels=config.graph_encoder_out_dim,
             heads=config.graph_encoder_heads,
             v2=True,
-            edge_dim=config.graph_encoder_edge_dim,
+            edge_dim=config.graph_encoder_edge_dim, # Edge Features need to be embedded to some X dimension.
             dropout=config.graph_encoder_dropout,
             add_self_loops=True,
         )
         
+        self.node_embedder = nn.Linear(32, 128)
+        
         self.aggr = SumAggregation()
         
-        mlp_hidden_dim = config.fingerprint_encoder_hidden_dim
-        mlp_output_dim = config.fingerprint_encoder_output_dim
+        mlp_hidden_dim = config.graph_encoder_mlp_hidden_dim
+        mlp_output_dim = 512
         
         self.mlp = nn.Sequential(
             nn.Linear(config.graph_encoder_out_dim, mlp_hidden_dim),
             nn.ReLU(),
+            nn.Dropout(0.2),
             nn.LayerNorm(mlp_hidden_dim),
             nn.Linear(mlp_hidden_dim, mlp_output_dim)
         )
         
     def forward(self, batch):
-        node_feats = self.gnn(batch.x, batch.edge_index, edge_attr=batch.edge_attr.to(torch.float32))
+        one_hot_edge_feats = nn.functional.one_hot(batch.edge_attr.to(torch.long), num_classes=3).to(torch.float32)
+        
+        node_embeddings = self.node_embedder(batch.x)
+        
+        node_feats = self.gnn(node_embeddings, batch.edge_index, edge_attr=one_hot_edge_feats)
         graph_feats = self.aggr(node_feats, batch.batch)
         
         return self.mlp(graph_feats)

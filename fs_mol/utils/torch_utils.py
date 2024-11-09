@@ -14,7 +14,7 @@ def torchify(data, device: torch.device):
     elif isinstance(data, dict):
         return {k: torchify(v, device) for k, v in data.items()}
     elif isinstance(data, np.ndarray):
-        return torch.from_numpy(data).to(device)
+        return torch.from_numpy(data).to(device, non_blocking=True)
     elif dataclasses.is_dataclass(data):
         # Note that we can't use dataclasses.asdict, as this recursively turns
         # all values into dicts as well, so that we lose the inner structure...
@@ -23,4 +23,5 @@ def torchify(data, device: torch.device):
         }
         return dataclasses.replace(data, **torch_data)
     else:
+        return data
         raise ValueError(f"Trying to torchify unknown value type {type(data)}!")

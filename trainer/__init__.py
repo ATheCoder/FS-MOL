@@ -1,9 +1,11 @@
+from lightning import LightningModule
 from lightning.pytorch.loggers.wandb import WandbLogger
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 from lightning.pytorch import Trainer
 
 import wandb
 from fewshot_utils.is_debugger_attached import is_debugger_attached
+from modules.lightning_callbacks.MetricCallback import MetricCallback
 
 
 def init_wandb(config, model, checkpoint_path):
@@ -24,7 +26,48 @@ def init_wandb(config, model, checkpoint_path):
     wandb.watch(model, log="all")
 
 
-def train_lightning_module(module, config, data_module, check_point_path=None, wandb_enabled=True):
+def test_lightning_module(module: LightningModule, config, data_module, checkpoint_path):
+    model = module.load_from_checkpoint(checkpoint_path, config=config)
+    # init_wandb(config, model, None)
+
+    callbacks = [
+        LearningRateMonitor(logging_interval="step"),
+        ModelCheckpoint(
+            f"/FS-MOL/checkpoints/tarjan-{wandb.run.id if wandb.run != None else 'debug'}/",
+            monitor="mean_delta_auc_pr",
+            save_top_k=2,
+            mode="max",
+            save_on_train_epoch_end=True,
+            save_last=True,
+        ),
+        MetricCallback(),
+    ]
+
+    trainer = Trainer(
+        # detect_anomaly=True,
+        # overfit_batches=100,
+        # profiler="simple",
+        accelerator="gpu",
+        devices=1,
+        # max_epochs=20,
+        # max_steps=1000,
+        # val_check_interval=1000,
+        log_every_n_steps=1,
+        logger=WandbLogger(),
+        default_root_dir="/FS-MOL/MXM_Checkpoint/",
+        callbacks=callbacks,
+        precision="16-mixed",
+        gradient_clip_val=1.0,
+        # gradient_clip_algorithm="value",
+        accumulate_grad_batches=config.accumulate_grad_batches,
+    )
+
+    trainer.validate(model, datamodule=data_module)
+
+
+def train_lightning_module(
+    module, config, data_module, check_point_path=None, wandb_enabled=True, user_callbacks=None
+):
     model = module(config, data_module)
 
     if wandb_enabled:
@@ -37,10 +80,12 @@ def train_lightning_module(module, config, data_module, check_point_path=None, w
             monitor="mean_delta_auc_pr",
             save_top_k=2,
             mode="max",
-            save_on_train_epoch_end=True,
             save_last=True,
         ),
     ]
+
+    if user_callbacks != None:
+        callbacks = callbacks + user_callbacks
 
     trainer = Trainer(
         # detect_anomaly=True,
@@ -55,11 +100,18 @@ def train_lightning_module(module, config, data_module, check_point_path=None, w
         logger=WandbLogger() if wandb_enabled else None,
         default_root_dir="/FS-MOL/MXM_Checkpoint/",
         callbacks=callbacks,
-        precision=16,
+        # precision="16-mixed",
         gradient_clip_val=1.0,
         # gradient_clip_algorithm="value",
         accumulate_grad_batches=config.accumulate_grad_batches,
     )
+
+    data_module.prepare_data()
+    data_module.setup("fit")
+
+    # if check_point_path == None:
+    #     trainer.validate(model, datamodule=data_module)
+
     trainer.fit(
         model,
         datamodule=data_module,

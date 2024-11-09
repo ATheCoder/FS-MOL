@@ -31,9 +31,6 @@ class CrossAttentionBlock(nn.Module):
     def __init__(self, feat1_dim, feat2_dim, d_k, d_v, d_ff, attn_drop = 0.2, n_heads = 1) -> None:
         super().__init__()
         
-        print('DK:', d_k)
-        print('DV:', d_v)
-        
         self.cross_attention = nn.ModuleList(
             [
                 CrossAttention(feat1_dim, feat2_dim, d_k=d_k, d_v=d_v, attn_drop=attn_drop) for _ in range(n_heads)

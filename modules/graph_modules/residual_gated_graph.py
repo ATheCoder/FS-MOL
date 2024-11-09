@@ -1,6 +1,6 @@
 from typing import Any
 import torch
-from torch_geometric.nn import MessagePassing, SetTransformerAggregation
+from torch_geometric.nn import MessagePassing, SumAggregation
 from torch import Tensor, nn
 
 
@@ -17,18 +17,17 @@ class ResGatedGNNLayer(MessagePassing):
 
         self.sigmoid = nn.Sigmoid()
 
-        self.relu = nn.ReLU()
+        self.relu = nn.LeakyReLU()
 
         self.batch_norm = nn.BatchNorm1d(dim)
 
     def forward(self, h, edge_index) -> Any:
+        h = self.batch_norm(h)
         h_in = h
 
         h = self.propagate(edge_index, h=h)
 
         h = self.u(h_in) + h
-
-        h = self.batch_norm(h)
 
         h = self.relu(h)
 
@@ -60,7 +59,11 @@ class ResidualGatedGraphEncoder(nn.Module):
         for _ in range(n_layers):
             self.message_passing.append(ResGatedGNNLayer(dim))
 
-        self.node_aggregator = SetTransformerAggregation(dim, heads=4, layer_norm=True)
+        # self.node_aggregator = SetTransformerAggregation(
+        #     dim, heads=4, layer_norm=False, num_decoder_blocks=0
+        # )
+        
+        self.node_aggregator = SumAggregation()
 
         self.final_mlp = nn.Linear(dim, graph_embedding)
 
@@ -81,9 +84,9 @@ class ResidualGatedGraphEncoder(nn.Module):
             h = x
 
         for layer in self.message_passing:
-            h = layer(h, edge_index)
+            h = layer(h, edge_index.long())
 
         graph_reprs = self.node_aggregator(h, batch)
-        graph_reprs = torch.nan_to_num(graph_reprs)
+        # graph_reprs = torch.nan_to_num(graph_reprs)
         out = self.final_mlp(graph_reprs)
         return out

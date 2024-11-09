@@ -5,14 +5,14 @@ from torch_geometric.nn.norm import GraphNorm
 from torch_geometric.utils import add_self_loops
 
 
-from modules.mxm import MLP, Res
+from modules.mxm import MLP, Res, Xavier_SiLU_MLP, Xavier_SiLU_Residual
 
 
 class ResidualGIN(nn.Module):
     def __init__(self, dim, dropout=0.0) -> None:
         super().__init__()
         self.dim = dim
-        self.layer_norm_2 = GraphNorm(self.dim)
+        self.graph_norm = GraphNorm(self.dim)
         self.linear = nn.Linear(self.dim, self.dim)
         self.gin_conv = GINConv(
             nn.Sequential(
@@ -24,7 +24,7 @@ class ResidualGIN(nn.Module):
         )
 
     def forward(self, h, edge_index, batch):
-        h = self.layer_norm_2(h, batch)
+        h = self.graph_norm(h, batch)
 
         res_h = h
 
@@ -197,34 +197,29 @@ class Global_MP(MessagePassing):
 
 
 class Generic_Global_MP(MessagePassing):
-    def __init__(self, dim, out_dim, edge_dim, dropout=0.0):
+    def __init__(self, dim, out_dim, edge_dim, dropout=0.0, attn_dropout=0.0):
         super(Generic_Global_MP, self).__init__()
         self.dim = dim
         self.out_dim = out_dim
         self.edge_dim = edge_dim
 
-        self.h_mlp = MLP([self.dim, self.dim])
+        self.h_mlp = Xavier_SiLU_MLP([self.dim, self.dim])
+        self.mlp = Xavier_SiLU_MLP([self.dim, self.dim], dropout)
+        self.x_edge_mlp = Xavier_SiLU_MLP([2 * self.dim + self.edge_dim, self.dim], dropout)
 
-        self.res1 = Res(self.dim, dropout)
-        self.res2 = Res(self.dim, dropout)
-        self.res3 = Res(self.dim, dropout)
-        self.mlp = MLP([self.dim, self.dim], dropout)
+        self.res1 = Xavier_SiLU_Residual(self.dim, dropout)
+        self.res2 = Xavier_SiLU_Residual(self.dim, dropout)
+        self.res3 = Xavier_SiLU_Residual(self.dim, dropout)
 
-        self.x_edge_mlp = MLP([2 * self.dim + self.edge_dim, self.dim], dropout)
         self.linear = nn.Linear(self.dim, self.dim, bias=False)
         self.norm = GraphNorm(dim)
-        # self.message_norm = GraphNorm(dim)
 
-        # if dim != out_dim:
         self.last_layer_projector = nn.Linear(self.dim, self.dim)
 
     def forward(self, h, edge_attr, edge_index, batch):
         edge_index, _ = add_self_loops(edge_index, num_nodes=h.size(0))
 
         res_h = h
-
-        # Integrate the Cross Layer Mapping inside the Global Message Passing
-        # h = self.h_mlp(h)
 
         # Message Passing operation
         h = self.propagate(edge_index, x=h, num_nodes=h.size(0), edge_attr=edge_attr, batch=batch)
@@ -234,7 +229,6 @@ class Generic_Global_MP(MessagePassing):
 
         h = self.mlp(h) + res_h
 
-        # h = self.norm(h, batch)
         h = self.res2(h, batch)
 
         h = self.res3(h, batch)
@@ -242,7 +236,9 @@ class Generic_Global_MP(MessagePassing):
         # Message Passing operation
         h = self.propagate(edge_index, x=h, num_nodes=h.size(0), edge_attr=edge_attr, batch=batch)
 
-        return self.h_mlp(self.norm(h, batch))
+        h = self.h_mlp(self.norm(h, batch))
+
+        return h
 
     def message(self, x_i, x_j, edge_attr, edge_index, num_nodes, batch):
         num_edge = edge_attr.size()[0]
@@ -255,5 +251,4 @@ class Generic_Global_MP(MessagePassing):
         return x_j
 
     def update(self, aggr_out, batch):
-        # return self.message_norm(aggr_out, batch)
         return aggr_out

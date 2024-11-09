@@ -11,6 +11,7 @@ from torch_geometric.nn import MessagePassing, PNAConv
 from torch_geometric.utils import degree
 
 from fs_mol.data.fsmol_dataset import NUM_EDGE_TYPES
+from fs_mol.modules.bidirectional_attention import CrossAttentionBlock
 from fs_mol.modules.mlp import MLP
 
 
@@ -97,6 +98,10 @@ class BOOMLayer(nn.Module):
 
     def forward(self, x):
         return self.linear2(self.dropout(self.activation(self.linear1(x))))
+    
+    
+# def attention_aggregator(messages: torch.Tensor, targets: torch.Tensor, num_nodes: Union[torch.Tensor], partial_msg_dim, use_pna_scalers):
+    
 
 
 def pna_aggregator(messages: torch.Tensor, targets: torch.Tensor, num_nodes: Union[torch.Tensor, int], partial_msg_dim, use_pna_scalers):
@@ -241,6 +246,8 @@ class RelationalMP(nn.Module):
                     hidden_layer_dims=[2 * hidden_dim] * (message_function_depth - 1),
                 )
             )
+        
+        # self.attn = CrossAttentionBlock(msg_dim, msg_dim, 8, 8, 128, 0.2, 2)
 
     @property
     def message_size(self) -> int:

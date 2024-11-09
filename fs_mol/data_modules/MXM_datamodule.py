@@ -5,6 +5,7 @@ from pathlib import Path
 import pickle
 import random
 from typing import List
+from torch_geometric.utils import to_undirected, remove_self_loops
 
 import numpy as np
 from lightning.pytorch.core import LightningDataModule
@@ -19,8 +20,12 @@ from tqdm import tqdm
 from fewshot_utils.tqdm_joblib import tqdm_joblib
 from fs_mol.converters.smiles_to_mxm import preprocess_smile
 from fs_mol.data.fsmol_dataset import DataFold, FSMolDataset
+from fs_mol.utils.collate_fns import subgraph_collate
 from preprocessing.geometric import get_all_divisions
 from torch_geometric.data import Data
+from torch_geometric.transforms import AddLaplacianEigenvectorPE
+
+from utils.pyg_mol_utils import make_graph_undirected
 
 
 @dataclass
@@ -76,19 +81,22 @@ class MXMDataset(Dataset):
         self.acc_query_per_task = np.cumsum(self.query_per_task)
 
     def sample_support_set_from_candidates(
-        self, candidate_support_indices, support_set_candidate_labels
+        self, candidate_support_indices, support_set_candidate_labels, sample_size
     ):
         sampler = StratifiedShuffleSplit(
-            1, test_size=min(len(support_set_candidate_labels) - 2, self.support_size)
+            1, test_size=min(len(support_set_candidate_labels) - 2, sample_size)
         )
 
-        _, support_set_indices = list(
+        remaining_indices, support_set_indices = list(
             sampler.split(candidate_support_indices, support_set_candidate_labels)
         )[0]
 
         del sampler
 
-        return candidate_support_indices[support_set_indices]
+        return (
+            candidate_support_indices[support_set_indices],
+            candidate_support_indices[remaining_indices],
+        )
 
     def get_task_name(self, index):
         indices = np.where(self.acc_query_per_task > index)
@@ -103,14 +111,25 @@ class MXMDataset(Dataset):
     def generate_q_s_indices(self, length, query_idx, labels):
         # assert self.query_size == 1
         arr = np.arange(length)
-        arr = arr[arr != query_idx]
+        query_indices = arr[query_idx * self.query_size : (query_idx + 1) * self.query_size]
+        arr = np.setdiff1d(arr, query_indices)
         p_arr = np.random.permutation(arr)
 
-        query_indices = np.array([query_idx])
         support_candidate_indices = p_arr
 
-        support_indices = self.sample_support_set_from_candidates(
-            support_candidate_indices, labels[support_candidate_indices]
+        support_indices, _ = self.sample_support_set_from_candidates(
+            support_candidate_indices, labels[support_candidate_indices], self.support_size
+        )
+
+        return query_indices, support_indices
+
+    def random_generate_q_s_indices(self, length, labels):
+        arr = np.arange(length)
+        query_indices, all_except_query = self.sample_support_set_from_candidates(
+            arr, labels, self.query_size
+        )
+        support_indices, _ = self.sample_support_set_from_candidates(
+            all_except_query, labels[all_except_query], self.support_size
         )
 
         return query_indices, support_indices
@@ -131,7 +150,7 @@ class MXMDataset(Dataset):
 
         labels = torch.load(self.root_path / task_name / "labels.pt")
         labels = np.array(labels)
-        query_indices, raw_support_candidates = self.generate_q_s_indices(task_count, i, labels)
+        query_indices, raw_support_candidates = self.random_generate_q_s_indices(task_count, labels)
 
         query_samples = [self.load_task_sample(task_name, s, labels[s]) for s in query_indices]
         support_samples = [
@@ -149,8 +168,11 @@ class MXMDataset(Dataset):
 
 
 class MXMValidationDataset(Dataset):
-    def __init__(self, root_path, support_size=16, split="valid", use_subgraph=False) -> None:
-        self.support_size = 16
+    def __init__(
+        self, root_path, support_size=16, split="valid", use_subgraph=False, query_set_size=32
+    ) -> None:
+        self.support_size = support_size
+        self.query_set_size = query_set_size
         self.root_path = Path(root_path) / split
 
         self.task_names = np.array(os.listdir(self.root_path), dtype=np.string_)
@@ -177,7 +199,10 @@ class MXMValidationDataset(Dataset):
 
         np.random.shuffle(query_set_indices)
 
-        return sample_indices[support_set_indices], sample_indices[query_set_indices[:16]]
+        return (
+            sample_indices[support_set_indices],
+            sample_indices[query_set_indices[: self.query_set_size]],
+        )
 
     def load_sample(self, task_name, idx):
         if self.use_subgraph:
@@ -200,6 +225,7 @@ class MXMValidationDataset(Dataset):
         return {
             "mols": np.concatenate((query_set, support_set)),
             "is_query": [1] * len(query_set) + [0] * len(support_set),
+            "task": task_name,
         }
 
     def __len__(self):
@@ -222,19 +248,38 @@ class MXMDataModule(LightningDataModule):
         batch_size=8,
         shuffle=True,
         support_size=16,
+        train_num_workers=6,
+        addHs=True,
+        maximum_graph_size=15,
+        eigen_vec_dim=None,
+        valid_support_size=16,
+        valid_query_size=64,
     ) -> None:
         super().__init__()
         self.root_path = Path(root_path)
+        self.eigen_vec_dim = eigen_vec_dim
         self.query_size = query_size
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.support_size = support_size
+        self.valid_support_size = valid_support_size
+        self.valid_query_size = valid_query_size
+
+        self.train_num_workers = train_num_workers
+        self.addHs = addHs
+        self.maximum_graph_size = maximum_graph_size
 
         self.original_fsmol_path = original_fsmol_path
         self.fsmol_task_json = fsmol_task_json
 
         self.raw_mol_path = self.root_path / "raw_mol.pt"
         self.index_map_path = self.root_path / "index_map.pt"
+
+        self.eigen_vec_transform = (
+            AddLaplacianEigenvectorPE(self.eigen_vec_dim, is_undirected=True)
+            if self.eigen_vec_dim
+            else None
+        )
 
         os.makedirs(self.root_path, exist_ok=True)
 
@@ -246,7 +291,7 @@ class MXMDataModule(LightningDataModule):
         elif fold == DataFold.VALIDATION:
             return self.root_path / "valid"
 
-    def generate_raw_data(self, datafold: DataFold):
+    def prepare_data_for_fold(self, datafold: DataFold):
         datafold_path = self.get_data_fold_path(datafold)
         if not datafold_path.exists():
             os.makedirs(datafold_path, exist_ok=True)
@@ -268,7 +313,7 @@ class MXMDataModule(LightningDataModule):
 
     def process_smiles(self, mxm_net_smiles: MXMNetMoleculeWithSmiles):
         try:
-            features = preprocess_smile(mxm_net_smiles.smiles, True)
+            features = preprocess_smile(mxm_net_smiles.smiles, self.addHs)
             return MXMNetMolecule(
                 features=features, label=mxm_net_smiles.label, task_name=mxm_net_smiles.task_name
             )
@@ -298,11 +343,17 @@ class MXMDataModule(LightningDataModule):
 
     def prepare_data(self) -> None:
         for fold in [DataFold.TRAIN, DataFold.TEST, DataFold.VALIDATION]:
-            self.generate_raw_data(fold)
+            self.prepare_data_for_fold(fold)
         # self.task_to_mols_map = self.generate_index_map()
 
     def setup(self, stage):
         print("Stage is: ", stage)
+        self.valid = MXMValidationDataset(
+            self.root_path,
+            support_size=self.valid_support_size,
+            query_set_size=self.valid_query_size,
+            split="test",
+        )
         if stage == "fit":
             self.train = MXMDataset(
                 self.root_path,  # /FS-MOL/data/tarjan_5/
@@ -311,21 +362,75 @@ class MXMDataModule(LightningDataModule):
                 support_size=self.support_size,
                 id="hei",
             )
-            self.valid = MXMValidationDataset(
-                self.root_path, support_size=self.support_size, split="test"
-            )
         else:
             self.test = MXMValidationDataset(
                 self.root_path,
-                support_size=self.support_size,
+                support_size=self.valid_support_size,
+                query_set_size=self.valid_query_size,
                 split="test",
             )
 
+    def add_eigen_vecs(self, data):
+        if not self.eigen_vec_transform:
+            return data
+        data.edge_index = to_undirected(data.edge_index, num_nodes=data.num_nodes)
+        data.edge_index = remove_self_loops(data.edge_index)[0]  # type: ignore
+
+        data = self.eigen_vec_transform(data)
+
+        data._inc_dict["laplacian_eigenvector_pe"] = data._inc_dict["x"]
+        data._slice_dict["laplacian_eigenvector_pe"] = data._slice_dict["x"]
+
+        return data
+
+    def filter_out_mols(self, batch):
+        to_be_removed_indices = [
+            i
+            for i, m in enumerate(batch["mols"])
+            if m.features.x.shape[0] <= self.eigen_vec_dim + 1
+        ]
+
+        filtered_batch = {}
+
+        for key in batch.keys():
+            if isinstance(batch[key], (list, np.ndarray)):
+                filtered_batch[key] = [
+                    m for i, m in enumerate(batch[key]) if i not in to_be_removed_indices
+                ]
+            else:
+                filtered_batch[key] = batch[key]
+
+        return filtered_batch
+
+    def add_eigen_vecs_list(self, data_list):
+        size = 4
+
+        batched_list = [
+            Batch.from_data_list(data_list[i : i + size]) for i in range(0, len(data_list), size)
+        ]
+
+        eigen_vecs_added_batch = [self.add_eigen_vecs(m) for m in batched_list]
+
+        unbatched_graphs = [m for b in eigen_vecs_added_batch for m in b.to_data_list()]
+
+        return unbatched_graphs
+
+    def preprocess_graph(self, data):
+        # data = removeHs(data)
+        # data = add_master_node(data)
+        data = make_graph_undirected(data)
+
+        return data
+
     def collate_fn(self, batch):
+        # batch = [self.filter_out_mols(b) for b in batch]
         is_query_indices = torch.tensor(np.concatenate([b["is_query"] for b in batch]))
         input_sets = np.concatenate([b["mols"] for b in batch])
         input_features = [m.features for m in input_sets]
-        batch_features = Batch.from_data_list(input_features)
+        input_features = [self.preprocess_graph(m) for m in input_features]
+        # if self.eigen_vec_transform != None:
+        #     input_features = self.add_eigen_vecs_list(input_features)
+        batch_features = Batch.from_data_list(input_features)  # type: ignore
         labels = torch.tensor([m.label for m in input_sets], dtype=torch.long)
         batch_index = torch.tensor([z for i, b in enumerate(batch) for z in [i] * len(b["mols"])])
 
@@ -345,7 +450,7 @@ class MXMDataModule(LightningDataModule):
             shuffle=self.shuffle,
             collate_fn=self.collate_fn,
             drop_last=False,
-            num_workers=6,
+            num_workers=self.train_num_workers,
             pin_memory=True,
         )
 
@@ -371,7 +476,9 @@ class MXMDataModule(LightningDataModule):
 class TarjanDataModule(MXMDataModule):
     def processMXMNetMolecule(self, m: MXMNetMolecule):
         all_divisions_of_mol = MoleculeWithCompleteDivisions(
-            features=get_all_divisions(m.features, 10), label=m.label, task_name=m.task_name
+            features=get_all_divisions(m.features, self.maximum_graph_size),
+            label=m.label,
+            task_name=m.task_name,
         )
 
         return [
@@ -417,32 +524,7 @@ class TarjanDataModule(MXMDataModule):
         )
 
     def collate_fn(self, batch):
-        task_names = [b["mols"][0].task_name for b in batch]
-        molecules = np.concatenate([b["mols"] for b in batch])
-        batch_index = torch.tensor(
-            [z for i, b in enumerate(batch) for z in [i] * len(b["mols"])], dtype=torch.long
-        )
-        labels = torch.tensor([int(m.label) for m in molecules], dtype=torch.long)
-        is_query_indices = torch.tensor(np.concatenate([b["is_query"] for b in batch]))
-
-        sub_structure_to_mol_index = [
-            z for i, mol in enumerate(molecules) for z in [i] * len(mol.features)
-        ]
-
-        sub_structure_graphs = [
-            subgraph for b in batch for mol in b["mols"] for subgraph in mol.features
-        ]
-
-        sub_structure_graphs = Batch.from_data_list(sub_structure_graphs)
-
-        return {
-            "substructures": sub_structure_graphs,
-            "substructure_mol_index": torch.tensor(sub_structure_to_mol_index, dtype=torch.long),
-            "is_query": is_query_indices,
-            "labels": labels,
-            "batch_index": batch_index,
-            "tasks": task_names,
-        }
+        return subgraph_collate(batch)
 
     def setup(self, stage):
         print("Stage is: ", stage)
@@ -456,9 +538,16 @@ class TarjanDataModule(MXMDataModule):
                 use_subgraphs=True,
             )
             self.valid = MXMValidationDataset(
-                self.root_path, support_size=self.support_size, split="test", use_subgraph=True
+                self.root_path,
+                support_size=self.valid_support_size,
+                split="test",
+                use_subgraph=True,
             )
         else:
             self.test = MXMValidationDataset(
-                self.root_path, support_size=self.support_size, split="test", use_subgraph=True
+                self.root_path,
+                support_size=self.valid_support_size,
+                query_set_size=self.valid_query_size,
+                split="test",
+                use_subgraph=True,
             )

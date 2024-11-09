@@ -5,19 +5,18 @@ import torch.nn as nn
 from torch_geometric.nn import SumAggregation, radius
 from torch_geometric.utils import remove_self_loops
 from torch_sparse import SparseTensor
-from MXMNet.utils import MLP
 from modules.graph_modules.global_mp import Generic_Global_MP
-
+from modules.mxm import Xavier_SiLU_MLP
+from torch_geometric.nn import SetTransformerAggregation
 from modules.node_embeders.basis_layers import BesselBasisLayer
 
 
 class GenericMXMNet_NoLocalInfo_Config(object):
-    def __init__(self, dim, n_layer, cutoff, encoder_dims, edge_dim):
+    def __init__(self, dim, n_layer, cutoff, attn_dropout):
         self.dim = dim
         self.n_layer = n_layer
         self.cutoff = cutoff
-        self.encoder_dims = encoder_dims
-        self.edge_dim = edge_dim
+        self.attn_dropout = attn_dropout
 
 
 class GenericMXMNet_NoLocalInfo(nn.Module):
@@ -40,16 +39,36 @@ class GenericMXMNet_NoLocalInfo(nn.Module):
 
         self.embeddings = nn.Embedding(16, self.dim)
 
-        self.rbf_g = BesselBasisLayer(16, 5.0, envelope_exponent)
+        self.rbf_g = BesselBasisLayer(16, config.cutoff, envelope_exponent)
 
-        self.rbf_g_mlp = MLP([16, self.dim], dropout)
-        self.out_lin = MLP([self.dim, self.dim])
+        self.rbf_g_mlp = Xavier_SiLU_MLP([16, self.dim], dropout)
+        self.out_lin = Xavier_SiLU_MLP([self.dim * self.n_layer, self.dim])
 
         self.global_layers = torch.nn.ModuleList()
         for i in range(self.n_layer):
-            self.global_layers.append(Generic_Global_MP(self.dim, self.dim, self.dim, dropout))
+            self.global_layers.append(
+                Generic_Global_MP(
+                    self.dim, self.dim, self.dim, dropout, attn_dropout=config.attn_dropout
+                )
+            )
 
         self.sum_module = SumAggregation()
+
+        # self.set_transformer = SetTransformerAggregation(
+        #     self.dim,
+        #     heads=4,
+        #     num_encoder_blocks=self.n_layer // 2,
+        #     num_decoder_blocks=self.n_layer // 2,
+        # )
+
+        self.set_transformer = SetTransformerAggregation(
+            self.dim * self.n_layer,
+            heads=8,
+            num_encoder_blocks=1,
+            num_decoder_blocks=1,
+        )
+        self.dist_norm_1 = nn.BatchNorm1d(1)
+        self.dist_norm_2 = nn.BatchNorm1d(16)
 
         self.init()
 
@@ -107,14 +126,26 @@ class GenericMXMNet_NoLocalInfo(nn.Module):
 
         # Get the RBF and SBF embeddings
         rbf_g = self.rbf_g(dist_g)
+        rbf_g = self.dist_norm_2(rbf_g)
         rbf_g = self.rbf_g_mlp(rbf_g)
 
         mol_reprs = []
         for layer in range(self.n_layer):
             h = self.global_layers[layer](h, rbf_g, edge_index_g, batch=data.batch)
 
-            graph_repr = self.sum_module(h, data.batch)
-            mol_reprs.append(graph_repr)
+            mol_reprs.append(h)
 
-        mol_repr = torch.cat(mol_reprs, dim=1)
+        # batch_size = mol_reprs[0].shape[0]
+        # device = mol_reprs[0].device
+
+        # flatted_per_layer_mol_reprs = torch.stack(mol_reprs, dim=1).reshape(-1, self.dim)
+        # batch_layer_index = torch.repeat_interleave(
+        #     torch.arange(batch_size, device=device), self.n_layer
+        # )
+
+        # mol_repr = self.set_transformer(flatted_per_layer_mol_reprs, batch_layer_index)
+
+        mol_repr = torch.cat(mol_reprs, dim=-1)
+
+        mol_repr = self.set_transformer(mol_repr, batch)
         return self.out_lin(mol_repr)

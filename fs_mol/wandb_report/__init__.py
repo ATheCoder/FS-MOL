@@ -5,7 +5,6 @@ from dataclasses import asdict
 
 def generate_evaluation_chart(test_results):
     if wandb.run != None:
-        print(len(test_results))
         test_results_list = list(map(lambda x: asdict(x), test_results))
         
         test_results_df = pandas.DataFrame(test_results_list)

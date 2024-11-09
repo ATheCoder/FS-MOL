@@ -1,7 +1,6 @@
 import argparse
 import logging
 import os
-import sys
 import random
 import time
 from typing import Any, Optional, Tuple, Union
@@ -9,12 +8,10 @@ from typing import Any, Optional, Tuple, Union
 import numpy as np
 from dpu_utils.utils import RichPath
 
-from pyprojroot import here as project_root
-
-sys.path.insert(0, str(project_root()))
-
 from fs_mol.data.fsmol_dataset import FSMolDataset
 from fs_mol.utils.logging import set_up_logging
+
+# sys.path.insert(0, str(project_root()))
 
 
 logger = logging.getLogger(__name__)

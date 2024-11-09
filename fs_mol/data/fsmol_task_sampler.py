@@ -334,6 +334,47 @@ class StratifiedTaskSampler_2:
         )
 
 
+class StratifiedTaskSampler_3:
+    def __init__(self, support_size, query_size) -> None:
+        self.support_size = support_size
+        self.query_size = query_size
+
+    def sample(self, task: FSMolTask):
+        indices = np.arange(len(task.samples))
+        np.random.shuffle(indices)
+
+        positive_mask = [indice for indice in indices if torch.eq(task.samples[indice].label, True)]
+        negative_mask = [indice for indice in indices if torch.eq(task.samples[indice].label, False)]
+
+        num_of_support_samples_for_each_class = self.support_size // 2
+        
+        num_of_query_samples_for_each_class = self.query_size // 2
+
+        positive_support_mask = positive_mask[:num_of_support_samples_for_each_class]
+        negative_support_mask = negative_mask[:num_of_support_samples_for_each_class]
+
+        
+        start_idx = num_of_support_samples_for_each_class
+        end_idx = start_idx + num_of_query_samples_for_each_class
+        
+        query_mask = (
+            positive_mask[start_idx:end_idx]
+            + negative_mask[start_idx:end_idx]
+        )
+
+        support_mask = positive_support_mask + negative_support_mask
+        
+        # This is to break the First Positives then Negatives pattern.
+        np.random.shuffle(query_mask)
+        np.random.shuffle(support_mask)
+
+        return FSMolTaskSample(
+            name=task.name,
+            train_samples=[task.samples[i] for i in support_mask],
+            test_samples=[task.samples[i] for i in query_mask],
+            valid_samples=[],
+        )
+
 class StratifiedTaskSampler(TaskSampler):
     def __init__(
         self,

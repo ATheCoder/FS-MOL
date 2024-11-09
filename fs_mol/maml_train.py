@@ -7,26 +7,27 @@ import operator
 import os
 import sys
 import time
-from functools import reduce, partial
+from functools import partial, reduce
 from pathlib import Path
-from typing import Iterable, List, Tuple, Dict, Optional
-from typing_extensions import Protocol
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import tensorflow as tf
 from azureml.core.run import Run
-from dpu_utils.utils import run_and_debug, RichPath
+from dpu_utils.utils import RichPath, run_and_debug
 from more_itertools import chunked
+from pyreporoot import project_root
 from tf2_gnn.cli_utils.model_utils import load_weights_verbosely
 from tf2_gnn.cli_utils.training_utils import unwrap_tf_tracked_data
 from tf2_gnn.layers import get_known_message_passing_classes
+from typing_extensions import Protocol
 
-from pyreporoot import project_root
+import wandb
 
 sys.path.insert(0, str(project_root(Path(__file__), root_files="requirements.txt")))
 
 from fs_mol.data import (
-    FSMolDataset,
     DataFold,
+    FSMolDataset,
     FSMolTask,
     FSMolTaskSample,
     StratifiedTaskSampler,
@@ -36,10 +37,16 @@ from fs_mol.data.maml import FSMolStubGraphDataset, TFGraphBatchIterable
 from fs_mol.models.metalearning_graph_binary_classification import (
     MetalearningGraphBinaryClassificationTask,
 )
-from fs_mol.utils.cli_utils import add_train_cli_args, set_up_train_run, str2bool
-from fs_mol.utils.logging import FileLikeLogger, PROGRESS_LOG_LEVEL
-from fs_mol.utils.maml_utils import save_model, eval_model_by_finetuning_on_tasks
-
+from fs_mol.utils.cli_utils import (
+    add_train_cli_args,
+    set_up_train_run,
+    str2bool,
+)
+from fs_mol.utils.logging import PROGRESS_LOG_LEVEL, FileLikeLogger
+from fs_mol.utils.maml_utils import (
+    eval_model_by_finetuning_on_tasks,
+    save_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -306,6 +313,7 @@ def metatrain_loop(
 
 
 def run_metatraining_from_args(args):
+    wandb.init(name="GN-MAML", config=args)
     # Get the housekeeping going and start logging:
     out_dir, fsmol_dataset, aml_run = set_up_train_run("MAML", args, tf=True)
 

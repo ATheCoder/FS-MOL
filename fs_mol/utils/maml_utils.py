@@ -1,16 +1,20 @@
-import logging
 import itertools
+import logging
 import os
 import pickle
 from functools import partial
-from typing import Dict, Any, Iterable, List, Optional, Tuple, Callable, Union
-from typing_extensions import Literal
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 import tensorflow as tf
-from tf2_gnn.cli_utils.model_utils import _get_name_to_variable_map, load_weights_verbosely
 from tf2_gnn.cli_utils.dataset_utils import get_model_file_path
+from tf2_gnn.cli_utils.model_utils import (
+    _get_name_to_variable_map,
+    load_weights_verbosely,
+)
+from typing_extensions import Literal
 
+import wandb
 from fs_mol.data import DataFold, FSMolDataset, FSMolTaskSample
 from fs_mol.data.maml import TFGraphBatchIterable
 from fs_mol.models.metalearning_graph_binary_classification import (
@@ -25,7 +29,6 @@ from fs_mol.utils.metrics import (
 )
 from fs_mol.utils.test_utils import eval_model
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -38,7 +41,6 @@ def save_model(
     extra_data_to_store: Dict[str, Any] = {},
     quiet: bool = True,
 ) -> None:
-
     data_to_store = {
         "model_class": model.__class__,
         "model_params": model._params,
@@ -188,6 +190,9 @@ def eval_model_by_finetuning_on_task(
         quiet=quiet,
     )
     test_metrics = __metrics_from_batch_results(test_model_results)
+
+    for k, v in test_metrics.items():
+        wandb.log(k, v)
     logger.log(PROGRESS_LOG_LEVEL, f" Test loss:                   {float(test_loss):.5f}")
     logger.log(PROGRESS_LOG_LEVEL, f" Test metrics: {test_metrics}")
 

@@ -71,13 +71,13 @@ class SetTransformerSimilarityModule(nn.Module):
 
 
 class CNAPSProtoNetSimilarityModule(SimilarityModule):
-    def __init__(self, init_prediction_scaling) -> None:
+    def __init__(self, init_prediction_scaling, learn_prediction_scaling=False) -> None:
         super().__init__()
-        if init_prediction_scaling != None:
+        if init_prediction_scaling is not None:
             self.prediction_scaling: Tensor | None
             self.register_parameter(
                 "prediction_scaling",
-                nn.Parameter(torch.ones([]) * np.log(1 / init_prediction_scaling)),
+                nn.Parameter(torch.ones([]) * np.log(init_prediction_scaling), requires_grad=learn_prediction_scaling)
             )
         else:
             self.prediction_scaling = None
@@ -250,7 +250,7 @@ class CNAPSProtoNetSimilarityModule(SimilarityModule):
         else:
             logit_scale = 1.0
 
-        return logits * logit_scale
+        return logits * logit_scale, batch_query_labels
 
 
 class SingleBatch_CNAPSProtoNetSimilarityModule(nn.Module):
