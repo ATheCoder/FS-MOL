@@ -25,7 +25,8 @@ import pickle
 import os
 from ray.experimental import tqdm_ray
 
-
+import math
+import random
 
     
 
@@ -108,7 +109,7 @@ def preprocess_smile(sample):
     
 ray.init()
 
-fold = 'train'
+fold = 'valid'
 
 
 def parse_jsongz(p):
@@ -121,19 +122,75 @@ dest_root = f'/FS-MOL/datasets/fs-mol-merged-cleaned/{fold}/'
 
 os.makedirs(dest_root, exist_ok=True)
 
+
+def split_dataset(data):
+    # Calculate the total number of samples
+    N = len(data)
+
+    # If the dataset is already less than or equal to 300, return it as a single list
+    if N <= 300:
+        return [data]
+
+    # Determine the number of splits needed
+    K = math.ceil(N / 300)
+
+    # Separate the data into positive and negative samples
+    positive_samples = [sample for sample in data if sample.get('Property') == '1.0']
+    negative_samples = [sample for sample in data if sample.get('Property') != '1.0']
+
+    # Split positive and negative samples into K parts
+    positive_splits = [[] for _ in range(K)]
+    negative_splits = [[] for _ in range(K)]
+
+    # Distribute positive samples
+    for idx, sample in enumerate(positive_samples):
+        positive_splits[idx % K].append(sample)
+
+    # Distribute negative samples
+    for idx, sample in enumerate(negative_samples):
+        negative_splits[idx % K].append(sample)
+
+    # Combine the splits and shuffle them
+    split_arrays = []
+    for i in range(K):
+        combined_split = positive_splits[i] + negative_splits[i]
+        random.shuffle(combined_split)
+        split_arrays.append(combined_split)
+
+    return split_arrays
+
+    
+    
+    
+
 @ray.remote
-def single_path_processor(path: Path, preprocessor_func, bar):
-    task = parse_jsongz(path)
+def single_path_splitter(path: Path, preprocessor_func, bar):
+    _task = parse_jsongz(path)
     task_name = path.name.split('.')[0]
     
+    tasks = split_dataset(_task)
+    
+    
+    processed_tasks = [single_path_processor(task, f'{task_name}_{i}', preprocessor_func, bar) for i, task in enumerate(tasks)]
+    
+    return processed_tasks
+
+def single_path_processor(task, task_name, preprocessor_func, bar):
     samples = []
+
+    # FILTER OUT TASKS WITH HUGE SAMPLES:
+    if len(task) > 300:
+        print('Still too many samples')
+        print('Skipped One Task')
+        return None
     
     for sample in task:
         try:
             new_sample = preprocessor_func(sample)
             samples.append(new_sample)
-        except:
+        except Exception as e:
             print(f'Skipped One Molecule in {task_name}')
+            print(e)
             
     if len(samples) < 32:
         return None
@@ -144,7 +201,6 @@ def single_path_processor(path: Path, preprocessor_func, bar):
         with open(f'{dest_root}/{task.name}.pkl', 'w+b') as f:
             pickle.dump(task, f, protocol=pickle.HIGHEST_PROTOCOL)
     bar.update.remote(1)
-    print('done')
     return task
     
 raw_path = f'/FS-MOL/datasets/fs-mol/{fold}/'
@@ -157,7 +213,7 @@ fsmol_task_paths = [ fsmol_root_dir / fold / f'{tn}.jsonl.gz' for tn in fsmol_ta
 remote_tqdm = ray.remote(tqdm_ray.tqdm)
 bar = remote_tqdm.remote(total=len(fsmol_task_paths))
 
-tasks = [single_path_processor.remote(path, preprocess_smile, bar) for path in fsmol_task_paths]
+tasks = [single_path_splitter.remote(path, preprocess_smile, bar) for path in fsmol_task_paths]
 
 ray.get(tasks)
 
