@@ -6,6 +6,7 @@ import ray
 
 
 
+
 currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 parentdir = os.path.dirname(currentdir)
 sys.path.insert(0, parentdir) 
@@ -109,7 +110,7 @@ def preprocess_smile(sample):
     
 ray.init()
 
-fold = 'valid'
+fold = 'train'
 
 
 def parse_jsongz(p):
@@ -118,7 +119,7 @@ def parse_jsongz(p):
         # Iterate over each line in the file
         return [json.loads(line.strip()) for line in file]
 
-dest_root = f'/FS-MOL/datasets/fs-mol-merged-cleaned/{fold}/'
+dest_root = f'/FS-MOL/datasets/fs-mol-merged-cleaned-no-split-of-large-tasks-3d/{fold}/'
 
 os.makedirs(dest_root, exist_ok=True)
 
@@ -159,30 +160,52 @@ def split_dataset(data):
 
     return split_arrays
 
+@ray.remote
+class SampleFailureCounter:
+    def __init__(self):
+        self.task_to_failures = {}
+        self.whole_task_removal = []
     
+    def add_failure(self, task_name):
+        if task_name not in self.task_to_failures:
+            self.task_to_failures[task_name] = 0
+        self.task_to_failures[task_name] += 1
+
+    def add_whole_task_removal(self, task_name):
+        self.whole_task_removal.append(task_name)
+
+    def get_whole_task_removal(self):
+        return self.whole_task_removal
     
+    def get_failures(self):
+        return self.task_to_failures
+    
+
+failure_counter = SampleFailureCounter.remote()
     
 
 @ray.remote
 def single_path_splitter(path: Path, preprocessor_func, bar):
-    _task = parse_jsongz(path)
+    tasks = parse_jsongz(path)
     task_name = path.name.split('.')[0]
     
-    tasks = split_dataset(_task)
+    # tasks = split_dataset(_task)
     
     
-    processed_tasks = [single_path_processor(task, f'{task_name}_{i}', preprocessor_func, bar) for i, task in enumerate(tasks)]
+    # processed_tasks = [single_path_processor(task, f'{task_name}_{i}', preprocessor_func, bar) for i, task in enumerate(tasks)]
     
+
+    processed_tasks = single_path_processor(tasks, task_name, preprocessor_func, bar)
     return processed_tasks
 
 def single_path_processor(task, task_name, preprocessor_func, bar):
     samples = []
 
     # FILTER OUT TASKS WITH HUGE SAMPLES:
-    if len(task) > 300:
-        print('Still too many samples')
-        print('Skipped One Task')
-        return None
+    # if len(task) > 300:
+    #     print('Still too many samples')
+    #     print('Skipped One Task')
+    #     return None
     
     for sample in task:
         try:
@@ -190,9 +213,14 @@ def single_path_processor(task, task_name, preprocessor_func, bar):
             samples.append(new_sample)
         except Exception as e:
             print(f'Skipped One Molecule in {task_name}')
+            failure_counter.add_failure.remote(task_name)
             print(e)
             
-    if len(samples) < 32:
+    if len(samples) < 20:
+        print(len(task))
+        print(task_name)
+        print(f'Skipped Task {task_name} due to low samples')
+        failure_counter.add_whole_task_removal.remote(task_name)
         return None
     task = FSMolTask(task_name, samples)
     
@@ -216,5 +244,13 @@ bar = remote_tqdm.remote(total=len(fsmol_task_paths))
 tasks = [single_path_splitter.remote(path, preprocess_smile, bar) for path in fsmol_task_paths]
 
 ray.get(tasks)
+
+failures = ray.get(failure_counter.get_failures.remote())
+
+for k, v in failures.items():
+    print(k, v)
+
+print('Whole Task Removals')
+print(ray.get(failure_counter.get_whole_task_removal.remote()))
 
 
