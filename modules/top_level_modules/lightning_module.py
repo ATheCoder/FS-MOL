@@ -83,7 +83,11 @@ metrics_table_cols = [
 ]
 
 class MRCLightningModule(L.LightningModule):
-    def __init__(self, config: TrainConfig, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, config: TrainConfig|dict, *args: Any, **kwargs: Any) -> None:
+        # If config might be coming in as a dict, you can unify it
+        # or parse it however you want:
+        if isinstance(config, dict):
+            config = TrainConfig(**config)
         self.config = kwargs.pop("config", config)
         super().__init__(*args, **kwargs)
         self.encoder = build_encoder(self.config.representation)
