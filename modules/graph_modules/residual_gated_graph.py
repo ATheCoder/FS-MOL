@@ -1,7 +1,9 @@
+from dataclasses import dataclass
 from typing import Any
 import torch
 from torch_geometric.nn import MessagePassing, SumAggregation
 from torch import Tensor, nn
+import torch.nn.functional as F
 
 
 class ResGatedGNNLayer(MessagePassing):
@@ -22,7 +24,7 @@ class ResGatedGNNLayer(MessagePassing):
         self.batch_norm = nn.BatchNorm1d(dim)
 
     def forward(self, h, edge_index) -> Any:
-        h = self.batch_norm(h)
+        h = F.normalize(h, p=2, dim=-1)
         h_in = h
 
         h = self.propagate(edge_index, h=h)
@@ -41,22 +43,29 @@ class ResGatedGNNLayer(MessagePassing):
 
         return n_ij * self.v(h_j)
 
+@dataclass
+class ResidualGatedGraphEncoderConfig:
+    init_node_embedding: int
+    eigen_vector_embedding: int
+    graph_embedding: int
+    n_layers: int
+
 
 class ResidualGatedGraphEncoder(nn.Module):
     def __init__(
-        self, init_node_embedding, eigen_vector_embedding, graph_embedding, n_layers
+        self, config
     ) -> None:
         super().__init__()
 
-        dim = init_node_embedding
+        dim = config.init_node_embedding
 
         self.message_passing = nn.ModuleList()
 
-        self.node_embedding = nn.Embedding(16, init_node_embedding)
+        self.node_embedding = nn.Embedding(16, config.init_node_embedding)
 
         # self.embed_eigen_vec = nn.Linear(eigen_vector_embedding, init_node_embedding)
 
-        for _ in range(n_layers):
+        for _ in range(config.n_layers):
             self.message_passing.append(ResGatedGNNLayer(dim))
 
         # self.node_aggregator = SetTransformerAggregation(
@@ -65,7 +74,7 @@ class ResidualGatedGraphEncoder(nn.Module):
         
         self.node_aggregator = SumAggregation()
 
-        self.final_mlp = nn.Linear(dim, graph_embedding)
+        self.final_mlp = nn.Linear(dim, config.graph_embedding)
 
     def forward(self, data):
         x, edge_index, eigen_vecs, batch = (
@@ -89,4 +98,4 @@ class ResidualGatedGraphEncoder(nn.Module):
         graph_reprs = self.node_aggregator(h, batch)
         # graph_reprs = torch.nan_to_num(graph_reprs)
         out = self.final_mlp(graph_reprs)
-        return out
+        return graph_reprs

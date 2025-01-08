@@ -7,13 +7,14 @@ import ray
 
 
 
+
 currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 parentdir = os.path.dirname(currentdir)
 sys.path.insert(0, parentdir) 
 
+from fs_mol.custom.utils import generate_pos
 import pickle
 from rdkit import Chem
-from fs_mol.custom.utils import get_mol_poses
 from rdkit.Chem.rdchem import BondType as BT
 import torch
 from torch_geometric.data import Data
@@ -86,7 +87,7 @@ def preprocess_smile(sample):
     
     x = generate_node_features(mol)
     
-    pos = torch.tensor(get_mol_poses(mol), dtype=torch.float)
+    pos = torch.tensor(generate_pos(mol), dtype=torch.float)
     
     edge_index = generate_edge_features(mol)
     
@@ -110,7 +111,7 @@ def preprocess_smile(sample):
     
 ray.init()
 
-fold = 'train'
+fold = 'test'
 
 
 def parse_jsongz(p):
@@ -119,7 +120,7 @@ def parse_jsongz(p):
         # Iterate over each line in the file
         return [json.loads(line.strip()) for line in file]
 
-dest_root = f'/FS-MOL/datasets/fs-mol-merged-cleaned-no-split-of-large-tasks-3d/{fold}/'
+dest_root = f'/FS-MOL/datasets/fs-mol-3d-etkdg3/{fold}/'
 
 os.makedirs(dest_root, exist_ok=True)
 

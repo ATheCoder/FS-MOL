@@ -10,6 +10,8 @@ from torch_geometric.data import Data
 from fs_mol.dataclass_wrapper import graph_dynamic
 from utils.pyg_mol_utils.removehs import removeHs
 from IPython.core.display import SVG
+import nglview as nv
+
 
 # Features:
 # AtomTypeFeatureExtractor
@@ -178,9 +180,9 @@ def generate_mol_from_pyg_data(data: Data, _3d=False):
         edge_set.add((i, j))
 
     # Set 3D coordinates for atoms
-    rdDepictor.Compute2DCoords(mol)
 
     if _3d == False:
+        rdDepictor.Compute2DCoords(mol)
         return mol
 
     conf = Chem.Conformer(mol.GetNumAtoms())
@@ -198,6 +200,10 @@ def visualize_pyg_mol_with_poses(data: Data, show_indices=False, _3d=False, remo
         data = removeHs(data)
     # Initialize empty editable molecule
     mol = generate_mol_from_pyg_data(data, _3d)
+
+    if _3d:
+        return nv.show_rdkit(mol)
+
     drawer = Draw.rdMolDraw2D.MolDraw2DSVG(300, 300)
     opts = drawer.drawOptions()
     opts.clearBackground = False
@@ -208,6 +214,7 @@ def visualize_pyg_mol_with_poses(data: Data, show_indices=False, _3d=False, remo
             drawer.DrawMolecule(mol_with_labels)
     else:
         drawer.DrawMolecule(mol)
+        
     drawer.FinishDrawing()
     svg = SVG(drawer.GetDrawingText())
 

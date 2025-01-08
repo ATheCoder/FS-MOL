@@ -1,5 +1,6 @@
 import dataclasses
 from typing import Dict, Tuple, List
+import torch
 from typing_extensions import Literal
 from dataclasses import dataclass
 
@@ -32,6 +33,8 @@ class BinaryEvalMetrics:
     delta_auc_pr: float
     optimistic_auc_pr: float
     optimistic_delta_auc_pr: float
+
+    number_of_half: int
 
 
 BinaryMetricType = Literal[
@@ -72,6 +75,7 @@ def compute_binary_task_metrics(predictions: List[float], labels: List[float]) -
         delta_auc_pr=delta_auc_pr,
         optimistic_auc_pr=optimistic_auc_pr,
         optimistic_delta_auc_pr=optimistic_delta_auc_pr,
+        number_of_half=torch.sum(predictions == 0.5)
     )
 
 

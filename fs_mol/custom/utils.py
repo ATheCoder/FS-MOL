@@ -1,13 +1,16 @@
 import numpy as np
 import torch
-from rdkit import Chem
-from rdkit.Chem import AllChem
 from torch_geometric.data import Data
+from rdkit.Chem import rdDistGeom
+
+def generate_pos(mol):
+    params = rdDistGeom.ETKDGv3()
+    params.maxIterations = 1_000
+    s = rdDistGeom.EmbedMolecule(mol, params)
+    return get_mol_poses(mol)
 
 
 def get_mol_poses(mol):
-    params = AllChem.ETKDG()
-    s = AllChem.EmbedMultipleConfs(mol, numConfs=3, params=params)
     mol_pos = []
     for i, atom in enumerate(mol.GetAtoms()):
         positions = mol.GetConformer().GetAtomPosition(i)

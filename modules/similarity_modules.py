@@ -1,3 +1,11 @@
+import sys
+import os
+import inspect
+
+currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+parentdir = os.path.dirname(currentdir)
+sys.path.insert(0, parentdir)
+
 from abc import ABC, abstractmethod
 from typing import Any
 import numpy as np
@@ -160,7 +168,9 @@ class CNAPSProtoNetSimilarityModule(SimilarityModule):
         pos_diff = positive_mean[:, None, :] - query_set
         neg_diff = negative_mean[:, None, :] - query_set
         pos_maha = torch.einsum("bik,bkx,bix->bi", pos_diff, pos_mats_inv, pos_diff)
+        # pos_maha = torch.clamp(pos_maha, -1e3, 1e3)
         neg_maha = torch.einsum("bik,bkx,bix->bi", neg_diff, neg_mats_inv, neg_diff)
+        # neg_maha = torch.clamp(neg_maha, -1e3, 1e3)
         # pos_maha = torch.einsum("bik,bkx,bij->bi", pos_diff, pos_mats_inv, pos_diff)
         # neg_maha = torch.einsum("bik,bkx,bij->bi", neg_diff, neg_mats_inv, neg_diff)
 
