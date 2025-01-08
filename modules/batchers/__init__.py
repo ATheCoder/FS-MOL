@@ -20,10 +20,10 @@ def fingerprint_descriptors_batcher(batch):
     return torch.stack(batch, dim=0)
 
 REPR_TO_BATCHER_MAP = {
-    '3d': pyg_batcher,
+    '2d': pyg_batcher,
     'fingerprint': fingerprint_batcher,
     # likewise for the new representation:
     'descriptors': descriptors_batcher,
     "fingerprint+descriptors": fingerprint_descriptors_batcher,
-    '3d_gated': pyg_batcher
+    '2d_gated': pyg_batcher
 }

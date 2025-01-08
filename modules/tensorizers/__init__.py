@@ -27,9 +27,9 @@ def fingerprint_descriptors_tensorizer(sample: MergedFSMOLSample):
     return torch.cat([fingerprints, descriptors], dim=0)
 
 REPR_TO_TENSORIZER_MAP = {
-    '3d': threed_graph_tensorizer,
+    '2d': threed_graph_tensorizer,
     'fingerprint': fingerprint_tensorizer,
     'descriptors': descriptors_tensorizer,
     'fingerprint+descriptors': fingerprint_descriptors_tensorizer,
-    '3d_gated': threed_graph_tensorizer
+    '2d_gated': threed_graph_tensorizer
 }
