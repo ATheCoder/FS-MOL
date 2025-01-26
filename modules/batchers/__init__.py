@@ -25,5 +25,7 @@ REPR_TO_BATCHER_MAP = {
     # likewise for the new representation:
     'descriptors': descriptors_batcher,
     "fingerprint+descriptors": fingerprint_descriptors_batcher,
-    '2d_gated': pyg_batcher
+    '2d_gated': pyg_batcher,
+    '3d_mxm': pyg_batcher,
+    '3d_pam': pyg_batcher,
 }

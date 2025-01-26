@@ -10,10 +10,11 @@ from torch_geometric.nn import (
 from torch_geometric.nn.norm import GraphNorm
 
 from modules.aggregators import make_aggregator
-from modules.graph_modules.global_mp import ResidualGIN
+from modules.graph_modules.global_mp import Global_MP_Attn
 from modules.mxm import MLP
 from modules.node_embeders.basis_layers import BesselBasisLayer
-from torch_geometric.utils import remove_self_loops, sort_edge_index, to_undirected
+from torch_geometric.utils import remove_self_loops, sort_edge_index
+from torch_cluster import radius
 
 
 @dataclass
@@ -48,8 +49,8 @@ class MXMNet(nn.Module):
 
         self.global_layers = torch.nn.ModuleList()
         for i in range(self.n_layer):
-            # self.global_layers.append(Global_MP_Attn(self.dim, self.dim, self.dim, dropout, layer_no=i))
-            self.global_layers.append(ResidualGIN(self.dim, config.dropout))
+            self.global_layers.append(Global_MP_Attn(self.dim, self.dim, self.dim, config.dropout, layer_no=i))
+            # self.global_layers.append(ResidualGIN(self.dim, config.dropout))
         
         self.aggregators = torch.nn.ModuleList()
         for i in range(self.n_layer):
@@ -86,7 +87,7 @@ class MXMNet(nn.Module):
         x = data.x
         pos = data.pos
         batch = data.batch
-        edge_index_g = to_undirected(data.edge_index.long())
+        # edge_index_g = to_undirected(data.edge_index.long())
         # Initialize node embeddings
         h = self.embeddings(x.long())
         # if wandb.run is not None:
@@ -94,8 +95,8 @@ class MXMNet(nn.Module):
         # wandb.log({'avg_graph_size': batch.bincount().mean()})
 
         # Get the edges pairwise distances in the global layer
-        # row, col = radius(pos, pos, self.cutoff, batch, batch, max_num_neighbors=500)
-        # edge_index_g = torch.stack([row, col], dim=0)
+        row, col = radius(pos, pos, self.cutoff, batch, batch, max_num_neighbors=500)
+        edge_index_g = torch.stack([row, col], dim=0)
         edge_index_g, _ = remove_self_loops(edge_index_g)
         edge_index_g = sort_edge_index(edge_index_g, sort_by_row=False)
         # j_g, i_g = edge_index_g
@@ -112,18 +113,18 @@ class MXMNet(nn.Module):
         for layer in range(self.n_layer):
             # wandb.log({"h_min": h.min(), "h_max": h.max()})
             h = self.global_layers[layer](h, edge_index_g, batch=data.batch)
-            mol_reprs.append(self.aggregators[layer](h, data.batch))
+            # mol_reprs.append(self.aggregators[layer](h, data.batch))
             
             # We can use a set transformer against the results of each layer.
 
             # mol_reprs.append(graph_repr)
 
         # mol_reprs = torch.cat(mol_reprs, dim=-1)
-        stacked_reprs = torch.stack(mol_reprs)
-        permuted_reprs = stacked_reprs.permute(1, 0, 2)
-        reshaped_reprs = permuted_reprs.reshape(-1, self.dim)
+        # stacked_reprs = torch.stack(mol_reprs)
+        # permuted_reprs = stacked_reprs.permute(1, 0, 2)
+        # reshaped_reprs = permuted_reprs.reshape(-1, self.dim)
         
-        q = self.set_transformer(reshaped_reprs, torch.arange(0, mol_reprs[0].shape[0], device='cuda').repeat_interleave(self.n_layer))
+        q = self.set_transformer(h, batch)
         # mol_reprs_2 = self.mlp(mol_reprs)
 
         return q

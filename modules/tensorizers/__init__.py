@@ -31,5 +31,7 @@ REPR_TO_TENSORIZER_MAP = {
     'fingerprint': fingerprint_tensorizer,
     'descriptors': descriptors_tensorizer,
     'fingerprint+descriptors': fingerprint_descriptors_tensorizer,
-    '2d_gated': threed_graph_tensorizer
+    '2d_gated': threed_graph_tensorizer,
+    '3d_mxm': threed_graph_tensorizer,
+    '3d_pam': threed_graph_tensorizer,
 }
